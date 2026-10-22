@@ -15,11 +15,12 @@ interface OmiTableProps {
 }
 
 const SUITS: Suit[] = ['spades', 'hearts', 'diamonds', 'clubs'];
-const SUIT_DATA: Record<Suit, { en: string; si: string; classes: string }> = {
-  spades: { en: 'Spades', si: 'ඉස්පිති', classes: 'text-slate-900 bg-stone-50 hover:bg-stone-100' },
-  hearts: { en: 'Hearts', si: 'හාරත', classes: 'text-rose-600 bg-rose-50 hover:bg-rose-100' },
-  diamonds: { en: 'Diamonds', si: 'රුවිත', classes: 'text-rose-600 bg-rose-50 hover:bg-rose-100' },
-  clubs: { en: 'Clubs', si: 'කලාබර', classes: 'text-slate-900 bg-stone-50 hover:bg-stone-100' },
+// Color styling stays local; translations are the single source of suit names.
+const SUIT_DATA: Record<Suit, { classes: string }> = {
+  spades: { classes: 'text-slate-900 bg-stone-50 hover:bg-stone-100' },
+  hearts: { classes: 'text-rose-600 bg-rose-50 hover:bg-rose-100' },
+  diamonds: { classes: 'text-rose-600 bg-rose-50 hover:bg-rose-100' },
+  clubs: { classes: 'text-slate-900 bg-stone-50 hover:bg-stone-100' },
 };
 
 /** All hands are displayed relative to the current player's seat. */
@@ -92,7 +93,7 @@ export const OmiTable: React.FC<OmiTableProps> = ({
           {player.name}{player.id === mySeatIndex ? ` (${t.youBadge})` : ''}
         </span>
         <span className="flex max-w-full items-center gap-1 text-[9px] leading-none text-emerald-100/75">
-          {isPartner ? (lang === 'si' ? 'ඔබේ පිල' : 'Partner') : `Team ${player.team}`}
+          {isPartner ? (lang === 'si' ? 'ඔබේ පිල' : 'Partner') : `${t.team} ${player.team}`}
           {!player.isHuman && <span className="rounded bg-zinc-900/70 px-1 py-0.5 text-amber-300">BOT</span>}
         </span>
         <span className="text-[9px] text-amber-200/85">
@@ -165,7 +166,7 @@ export const OmiTable: React.FC<OmiTableProps> = ({
         </span>
         <span className="rounded-full border border-amber-400/30 bg-emerald-950/75 px-2.5 py-1">
           {gameState.trumpSuit
-            ? `${lang === 'si' ? 'තුරුම්පු' : 'Trump'} ${SUIT_SYMBOL[gameState.trumpSuit]}`
+            ? `${lang === 'si' ? 'තුරුම්පු' : 'Trump'} ${SUIT_SYMBOL[gameState.trumpSuit]} ${t[gameState.trumpSuit]}`
             : (lang === 'si' ? 'තුරුම්පු තෝරා නැත' : 'Trump pending')}
         </span>
       </div>
@@ -219,7 +220,7 @@ export const OmiTable: React.FC<OmiTableProps> = ({
           </span>
           {isMyTurn && mustFollow && leadSuit && (
             <span className="rounded-full bg-emerald-950 px-2.5 py-1 text-[10px] sm:text-xs text-amber-200">
-              {t.mustFollowSuit.replace('{suit}', leadSuit.toUpperCase())}
+              {t.mustFollowSuit.replace('{suit}', t[leadSuit])}
             </span>
           )}
         </div>
@@ -302,10 +303,10 @@ export const OmiTable: React.FC<OmiTableProps> = ({
                       className={`flex min-h-24 flex-col items-center justify-center rounded-2xl border-2 border-amber-300/40
                         px-3 py-3 font-bold transition-transform hover:-translate-y-0.5 focus-visible:ring-4 focus-visible:ring-amber-400
                         active:scale-95 disabled:cursor-wait disabled:opacity-60 ${SUIT_DATA[suit].classes}`}
-                      aria-label={`${lang === 'si' ? SUIT_DATA[suit].si : SUIT_DATA[suit].en} trump`}
+                      aria-label={`${t[suit]} ${t.trumpSuit}`}
                     >
                       <span className="text-4xl leading-none sm:text-5xl">{SUIT_SYMBOL[suit]}</span>
-                      <span className="mt-1 text-sm">{lang === 'si' ? SUIT_DATA[suit].si : SUIT_DATA[suit].en}</span>
+                      <span className="mt-1 text-sm">{t[suit]}</span>
                     </button>
                   ))}
                 </div>
