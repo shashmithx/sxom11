@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { CardComponent } from './CardComponent';
+import { sound } from '../utils/sound';
 
 interface ShuffleDeckProps {
   dealerName: string;
@@ -31,14 +32,18 @@ export const ShuffleDeck: React.FC<ShuffleDeckProps> = ({
   const [pendingDeal, setPendingDeal] = useState(false);
   const pointerStart = useRef<number | null>(null);
   const swallowNextClick = useRef(false);
+  const lastCountRef = useRef(count);
   const canShuffle = isMyTurn && !pendingShuffle && !pendingDeal && count < 8;
   const canDeal = isMyTurn && count >= 1 && !pendingShuffle && !pendingDeal;
 
   useEffect(() => {
+    if (count > lastCountRef.current) sound.playShuffle();
+    lastCountRef.current = count;
     setPendingShuffle(false);
   }, [count]);
 
   useEffect(() => {
+    lastCountRef.current = 0;
     setPendingShuffle(false);
     setPendingDeal(false);
   }, [roundNumber]);
