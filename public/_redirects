@@ -1,1 +1,2 @@
-/* /index.html 200
+# SPA fallback is configured in Wrangler, so no redirect rules are needed here.
+# Keeping this file empty avoids the Cloudflare redirect loop during deploy.
