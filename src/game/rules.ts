@@ -262,6 +262,17 @@ export function setupInitialPlayers(
 }
 
 /**
+ * Local practice is ALWAYS one human at seat 0 plus three bots, regardless
+ * of whether the online two-player mode is partners or opponents.
+ */
+export function setupSoloPlayers(teamMode: TeamMode, hostName: string = 'Player 1'): PlayerInfo[] {
+  return setupInitialPlayers(teamMode, hostName, 'Bot Sunil').map(player => {
+    if (player.id === 0) return player;
+    return { ...player, isHuman: false, peerId: undefined };
+  });
+}
+
+/**
  * Sanitizes game state before sending over network to a specific player seat.
  * Hides all other players' hand cards so opponents cannot cheat by inspecting the DOM/payload.
  */
