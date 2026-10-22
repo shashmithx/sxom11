@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { Card, PlayedCard, SanitizedGameState, Suit } from '../game/types';
 import { CardComponent, SUIT_SYMBOL } from './CardComponent';
-import { isCardPlayable } from '../game/rules';
+import { determineTrickWinner, isCardPlayable } from '../game/rules';
 import { translations } from '../utils/i18n';
 import { sound } from '../utils/sound';
 
@@ -15,6 +16,27 @@ interface OmiTableProps {
 }
 
 const SUITS: Suit[] = ['spades', 'hearts', 'diamonds', 'clubs'];
+
+/** Player-relative motion paths (0 bottom, 1 right, 2 top, 3 left). */
+const CARD_TARGETS = [
+  { x: 0, y: 63, rotate: -3 },
+  { x: 61, y: 0, rotate: 5 },
+  { x: 0, y: -63, rotate: 3 },
+  { x: -61, y: 0, rotate: -5 },
+] as const;
+const CARD_ORIGINS = [
+  { x: 0, y: 180, rotate: -16 },
+  { x: 230, y: 0, rotate: 16 },
+  { x: 0, y: -180, rotate: 14 },
+  { x: -230, y: 0, rotate: -14 },
+] as const;
+const CARD_COLLECTIONS = [
+  { x: 0, y: 210, rotate: 16 },
+  { x: 250, y: 0, rotate: 25 },
+  { x: 0, y: -210, rotate: -15 },
+  { x: -250, y: 0, rotate: -25 },
+] as const;
+
 // Color styling stays local; translations are the single source of suit names.
 const SUIT_DATA: Record<Suit, { classes: string }> = {
   spades: { classes: 'text-slate-900 bg-stone-50 hover:bg-stone-100' },
@@ -33,6 +55,7 @@ export const OmiTable: React.FC<OmiTableProps> = ({
   lang,
 }) => {
   const t = translations[lang];
+  const reducedMotion = useReducedMotion() === true;
   const [trumpSubmitting, setTrumpSubmitting] = useState(false);
   const isSelectingTrump = gameState.phase === 'SELECTING_TRUMP';
   const isTrumpSelector = gameState.trumpSelectorIndex === mySeatIndex;
@@ -70,11 +93,25 @@ export const OmiTable: React.FC<OmiTableProps> = ({
     return played;
   }, [gameState.currentTrick]);
 
+  const collecting = gameState.phase === 'TRICK_RESOLVING' &&
+    gameState.currentTrick?.cards.length === 4;
+
+  // The host already reports the authoritative winner. This fallback makes
+  // incoming snapshots robust if winnerPlayerId has not arrived yet.
+  const trickWinnerId = collecting && gameState.currentTrick && gameState.trumpSuit
+    ? (gameState.currentTrick.winnerPlayerId ??
+        determineTrickWinner(gameState.currentTrick, gameState.trumpSuit).playerId)
+    : null;
+  const winnerRelativeSeat = trickWinnerId === null
+    ? null
+    : (trickWinnerId - mySeatIndex + 4) % 4;
+
   type SeatInfo = typeof gameState.players[number];
 
   const playerBadge = (player: SeatInfo, isBottom = false) => {
     const isActive = gameState.activePlayerIndex === player.id;
     const isPartner = player.team === me.team && player.id !== mySeatIndex;
+    const isWinningTrick = collecting && trickWinnerId === player.id;
     return (
       <div className="relative flex min-w-0 flex-col items-center gap-1 text-center">
         {reactions[player.id] && (
@@ -83,7 +120,9 @@ export const OmiTable: React.FC<OmiTableProps> = ({
         <div className={`relative flex items-center justify-center rounded-full border-2 font-black shadow-lg
           ${isBottom ? 'h-10 w-10 sm:h-12 sm:w-12 text-sm sm:text-base' : 'h-9 w-9 sm:h-11 sm:w-11 text-xs sm:text-base'}
           ${player.team === 1 ? 'bg-blue-950 text-blue-100' : 'bg-rose-950 text-rose-100'}
-          ${isActive ? 'border-amber-300 ring-[3px] ring-amber-400/50' : 'border-white/30'}`}>
+          ${isWinningTrick
+            ? 'border-amber-200 ring-[4px] ring-amber-300/80 shadow-[0_0_24px_rgba(251,191,36,0.7)]'
+            : isActive ? 'border-amber-300 ring-[3px] ring-amber-400/50' : 'border-white/30'}`}>
           {player.name.charAt(0).toUpperCase()}
           {gameState.dealerIndex === player.id && (
             <span title="Dealer" className="absolute -top-1 -right-1 rounded-full bg-amber-400 px-1 text-[9px] text-zinc-950">D</span>
@@ -99,6 +138,25 @@ export const OmiTable: React.FC<OmiTableProps> = ({
         <span className="text-[9px] text-amber-200/85">
           {gameState.trumpSelectorIndex === player.id ? '★ ' : ''}{t.tricks}: {player.tricksWon}
         </span>
+        <div className="relative flex h-7 items-center justify-center gap-2" aria-label={`${player.name}: ${player.tricksWon} ${t.tricks}`}>
+          <div className="relative h-6 w-8">
+            {Array.from({ length: Math.min(player.tricksWon, 3) }, (_, i) => (
+              <span key={i} aria-hidden="true" className="absolute top-0 h-[23px] w-[17px] rounded-[3px] border border-amber-300/65 bg-emerald-950 shadow-[0_2px_3px_rgba(0,0,0,0.5)]"
+                style={{ left: i * 5, transform: `rotate(${(i - 1) * 8}deg)` }} />
+            ))}
+          </div>
+          <AnimatePresence initial={false} mode="popLayout">
+            {player.tricksWon > 0 && (
+              <motion.span key={`won-${player.id}-${player.tricksWon}`}
+                initial={reducedMotion ? false : { scale: 0.55, y: -14, opacity: 0 }}
+                animate={{ scale: 1, y: 0, opacity: 1 }}
+                exit={{ opacity: 0, scale: 0.8 }}
+                transition={{ duration: reducedMotion ? 0 : 0.3, type: 'spring', bounce: 0.35 }}
+                className="min-w-5 rounded-full bg-amber-400 px-1.5 py-0.5 text-center text-[10px] font-black text-zinc-950"
+              >{player.tricksWon}</motion.span>
+            )}
+          </AnimatePresence>
+        </div>
       </div>
     );
   };
@@ -126,24 +184,41 @@ export const OmiTable: React.FC<OmiTableProps> = ({
     );
   };
 
+  /**
+   * Cards arrive at the shared trick from their actual seat and remain on
+   * the table long enough to be seen. On removal, all four fly to the
+   * winning seat while the winner's face-down pile increments.
+   *
+   * Motion is presentation-only: the authoritative game state is never delayed.
+   */
   const showPlayedCard = (relativePosition: 0 | 1 | 2 | 3) => {
     const seat = seats[relativePosition];
     const played = playedBySeat.get(seat.id);
     if (!played) return null;
-    const classes = [
-      'bottom-1 left-1/2 -translate-x-1/2 rotate-[-4deg]',
-      'top-1/2 right-1 -translate-y-1/2 rotate-[5deg]',
-      'top-1 left-1/2 -translate-x-1/2 rotate-[3deg]',
-      'top-1/2 left-1 -translate-y-1/2 rotate-[-6deg]',
-    ] as const;
+    const origin = CARD_ORIGINS[relativePosition];
+    const target = CARD_TARGETS[relativePosition];
+    const collection = winnerRelativeSeat === null
+      ? target
+      : CARD_COLLECTIONS[winnerRelativeSeat];
+
     return (
-      <div
-        key={played.card.id}
-        className={`absolute z-10 transition-transform duration-200 ${classes[relativePosition]}`}
+      <motion.div
+        key={`${gameState.roundNumber}-${played.card.id}`}
+        className="pointer-events-none absolute left-1/2 top-1/2 z-20 -ml-[26px] -mt-[38px] drop-shadow-[0_12px_15px_rgba(0,0,0,0.45)]"
+        initial={reducedMotion ? false : { ...origin, opacity: 0, scale: 0.75 }}
+        animate={{ ...target, opacity: 1, scale: 1 }}
+        exit={reducedMotion
+          ? { opacity: 0, transition: { duration: 0.08 } }
+          : { ...collection, opacity: 0, scale: 0.25, transition: { duration: 0.55, ease: 'easeInOut' } }}
+        transition={{ type: 'spring', stiffness: 350, damping: 28, mass: 0.7 }}
         title={`${seat.name}: ${played.card.rank} of ${played.card.suit}`}
       >
-        <CardComponent card={played.card} size="sm" />
-      </div>
+        <div className={collecting && trickWinnerId === seat.id
+          ? 'rounded-xl ring-2 ring-amber-300 shadow-[0_0_20px_rgba(251,191,36,0.55)]'
+          : 'rounded-xl ring-1 ring-white/30'}>
+          <CardComponent card={played.card} size="md" />
+        </div>
+      </motion.div>
     );
   };
 
@@ -176,26 +251,43 @@ export const OmiTable: React.FC<OmiTableProps> = ({
         {hiddenHand(seats[2].cardCount)}
       </div>
 
-      <div className="relative z-10 grid flex-1 grid-cols-[minmax(62px,1fr)_minmax(132px,2.6fr)_minmax(62px,1fr)] items-center gap-0.5 sm:gap-4">
+      <div className="relative z-10 grid flex-1 grid-cols-[minmax(52px,0.8fr)_minmax(172px,3fr)_minmax(52px,0.8fr)] items-center gap-0.5 sm:gap-4">
         <div className="flex min-w-0 flex-col items-center justify-center gap-1">
           {playerBadge(seats[3])}
           {hiddenHand(seats[3].cardCount, true)}
         </div>
 
-        <div className="relative mx-auto aspect-square w-full max-w-[245px] rounded-full border border-amber-200/30 bg-emerald-950/35 shadow-[inset_0_4px_22px_rgba(0,0,0,0.25)]">
+        <div className="relative mx-auto aspect-square w-full max-w-[310px] min-h-[170px] rounded-full border border-amber-200/35 bg-emerald-950/45 shadow-[inset_0_4px_22px_rgba(0,0,0,0.25)]">
           <div className="pointer-events-none absolute inset-3 rounded-full border border-amber-300/15" />
           {gameState.currentTrick && (
-            <span className="absolute left-1/2 top-[42%] z-0 -translate-x-1/2 text-[11px] font-bold text-amber-200/75">
-              {SUIT_SYMBOL[gameState.currentTrick.leadSuit]}
+            <span className="absolute left-1/2 top-1 z-0 -translate-x-1/2 rounded-full bg-emerald-950/80 px-2 py-0.5 text-[10px] font-bold text-amber-200">
+              {SUIT_SYMBOL[gameState.currentTrick.leadSuit]} {t[gameState.currentTrick.leadSuit]}
             </span>
           )}
-          {showPlayedCard(2)}
-          {showPlayedCard(3)}
-          {showPlayedCard(1)}
-          {showPlayedCard(0)}
-          {(!gameState.currentTrick || !gameState.currentTrick.cards.length) &&
+          <AnimatePresence initial={false}>
+            {showPlayedCard(2)}
+            {showPlayedCard(3)}
+            {showPlayedCard(1)}
+            {showPlayedCard(0)}
+          </AnimatePresence>
+          <AnimatePresence>
+            {collecting && trickWinnerId !== null && (
+              <motion.div key={`winner-${gameState.roundNumber}-${gameState.tricksHistory.length}`}
+                initial={reducedMotion ? false : { opacity: 0, scale: 0.7, y: 10 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 1.1 }}
+                transition={{ duration: reducedMotion ? 0 : 0.22 }}
+                className="pointer-events-none absolute inset-x-0 top-1/2 z-30 flex -translate-y-1/2 justify-center"
+                role="status" aria-live="polite">
+                <span className="max-w-[90%] rounded-full border border-white/60 bg-amber-400 px-3 py-1.5 text-center text-xs font-extrabold text-emerald-950 shadow-lg">
+                  🏆 {gameState.players[trickWinnerId].name} {lang === 'si' ? 'අත දිනුවා!' : 'wins the trick!'}
+                </span>
+              </motion.div>
+            )}
+          </AnimatePresence>
+          {(!gameState.currentTrick || gameState.currentTrick.cards.length === 0) &&
             gameState.phase === 'TRICK_PLAYING' && (
-              <div className="absolute inset-0 flex items-center justify-center px-3 text-center text-[11px] sm:text-sm font-medium text-amber-100/90">
+              <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-4 text-center text-xs font-semibold text-amber-100/90">
                 {isMyTurn
                   ? (lang === 'si' ? 'ඔබේ වාරයයි' : 'Your turn')
                   : `${currentPlayer?.name || 'Player'} ${lang === 'si' ? 'ගේ වාරය' : 'to play'}`}
@@ -233,8 +325,12 @@ export const OmiTable: React.FC<OmiTableProps> = ({
             {sortedHand.map((card, index) => {
               const playable = isMyTurn && isCardPlayable(card, me.hand, leadSuit);
               return (
-                <div
+                <motion.div
                   key={card.id}
+                  layout={!reducedMotion}
+                  initial={reducedMotion ? false : { y: 36, opacity: 0, rotate: -7, scale: 0.85 }}
+                  animate={{ y: 0, opacity: 1, rotate: 0, scale: 1 }}
+                  transition={{ duration: reducedMotion ? 0 : 0.32, delay: reducedMotion ? 0 : Math.min(index, 7) * 0.045 }}
                   className={`relative shrink-0 hover:z-40 focus-within:z-40 ${index ? '-ml-3 sm:-ml-2' : ''}`}
                 >
                   <CardComponent
@@ -248,7 +344,7 @@ export const OmiTable: React.FC<OmiTableProps> = ({
                     }}
                     size="md"
                   />
-                </div>
+                </motion.div>
               );
             })}
             {!sortedHand.length && (
