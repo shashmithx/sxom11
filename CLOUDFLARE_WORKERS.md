@@ -5,7 +5,7 @@ The deployed site `sxom11.shashmithx.workers.dev` is a **Worker**, not a Pages s
 The production setup is now:
 - `worker/index.ts` routes `/api/rooms/*` to the shared D1-backed room API and serves all React assets via the `ASSETS` binding.
 - `wrangler.jsonc` configures Worker name **sxom11**, assets under `dist`, API-first routing, and `ROOMS_DB`.
-- The `ROOMS_DB` D1 database is **automatically provisioned** on deployment when Wrangler 4.45+ is used, since the binding has no database ID. In GitHub-connected builds the generated database ID stays visible in Cloudflare; it is not automatically committed to Git.
+- `ROOMS_DB` is bound to the existing `sxom11-rooms-db` D1 database using its fixed `database_id` in `wrangler.jsonc`. Wrangler must reuse this database instead of trying to create another one on every GitHub build.
 - The API initializes its necessary D1 tables and indexes automatically on the first request. The SQL file under `migrations/` is an optional manual equivalent.
 
 ## Cloudflare Workers Builds settings
@@ -24,6 +24,10 @@ Wrangler's current version is pinned in package.json. Verify the deployment uses
 
 Merging the PR doesn't itself deploy the Worker unless GitHub production builds are connected and enabled.
 
+## D1 provisioning after a failed deployment
+
+The first build successfully created D1, then failed because the compatibility date was in the future. The second build attempted to create the already-existing database. To prevent this, `wrangler.jsonc` now specifies `database_name` and `database_id` for the existing database. **Do not delete the database or remove the database ID** just to retry deployment.
+
 ## After deployment
 
 1. Open `https://sxom11.shashmithx.workers.dev/api/rooms/health`. It must return HTTP 200, `Content-Type: application/json`, and `{"success":true,"service":"shanex-omi-rooms","storage":"D1"}`.
@@ -36,7 +40,7 @@ Merging the PR doesn't itself deploy the Worker unless GitHub production builds 
 | Result | Meaning |
 | --- | --- |
 | HTTP 405 with empty body | Stale/static-only Worker is deployed, or the Worker script does not run for `/api/*`. Verify the Build and Deploy commands, branch, and `wrangler.jsonc` entrypoint. |
-| HTTP 503 JSON with missing ROOMS_DB binding | The D1 resource was not provisioned/bound. Check Worker > Bindings and Workers Builds logs; ensure Wrangler >=4.45. |
+| HTTP 503 JSON with missing ROOMS_DB binding | Verify the `ROOMS_DB` binding uses the existing `sxom11-rooms-db` database ID and redeploy. |
 | HTTP 503 JSON with room service unavailable | Check Worker logs for schema initialization, D1 quotas, and permissions. |
 | HTTP 403 HTML challenge | Check WAF/security rules targeting `/api/rooms/*`. |
 | Health works but peers cannot connect directly | Check signaling packets, STUN connectivity, and whether TURN is needed; app has a limited D1 relay fallback. |
