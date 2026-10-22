@@ -234,8 +234,7 @@ export const OmiTable: React.FC<OmiTableProps> = ({
               return (
                 <div
                   key={card.id}
-                  className={`relative shrink-0 ${index ? '-ml-3 sm:-ml-2' : ''} ${playable ? 'hover:z-40 focus-within:z-40' : ''}`}
-                  style={{ zIndex: playable ? 20 + index : index }}
+                  className={`relative shrink-0 hover:z-40 focus-within:z-40 ${index ? '-ml-3 sm:-ml-2' : ''}`}
                 >
                   <CardComponent
                     card={card}
