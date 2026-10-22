@@ -18,6 +18,7 @@ import {
 import {
   createOmiDeck,
   shuffleDeck,
+  canDealerShuffle,
   setupInitialPlayers,
   setupSoloPlayers,
   sanitizeStateForPlayer,
@@ -89,6 +90,10 @@ export default function App() {
   // Local Render State (sanitized for this player)
   const [renderState, setRenderState] = useState<SanitizedGameState | null>(null);
   const stateSeqRef = useRef<number>(0);
+  // Undealt deck is host-private; neither shuffle inputs nor online snapshots
+  // reveal its permutation to any player.
+  const shuffledDeckRef = useRef<Card[] | null>(null);
+  const shuffleEpochRef = useRef(0);
   const lastGuestSeqRef = useRef(0);
   const guestFramesRef = useRef<{ seq: number; state: SanitizedGameState }[]>([]);
   const guestFrameTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -184,6 +189,12 @@ export default function App() {
       const state = hostStateRef.current;
       const guestSeat = state?.teamMode === 'same_team' ? 2 : 1;
       if (state && msg.playerId === guestSeat) applyCardPlay(msg.playerId, msg.cardId);
+    } else if (msg.type === 'SHUFFLE_CARDS' && isHost) {
+      const state = hostStateRef.current;
+      const guestSeat = state?.teamMode === 'same_team' ? 2 : 1;
+      if (state && msg.playerId === guestSeat && state.roundNumber === msg.roundNumber) {
+        applyShuffleAction(msg.playerId, msg.action);
+      }
     } else if (msg.type === 'EMOJI_REACTION') {
       triggerEmoji(msg.fromSeat, msg.emoji);
     } else if (msg.type === 'REQUEST_REMATCH' && isHost) {
@@ -281,7 +292,8 @@ export default function App() {
       roomCode: 'SOLO-PRACTICE',
       teamMode,
       botDifficulty,
-      phase: 'DEALING_1',
+      phase: 'SHUFFLING',
+      shuffleCount: 0,
       // First round: seat 3 deals, so the human host (seat 0) calls trump.
       // Later rounds rotate the dealer and selector in the normal Omi order.
       dealerIndex: 3,
@@ -307,8 +319,7 @@ export default function App() {
       messageSi: 'මුල් කාඩ්පත් 4 බෙදමින්...',
     };
 
-    broadcastState(fullState);
-    dealFirstPhase(fullState);
+    beginShuffle(fullState);
   };
 
   // Host starts the OMI match with connected Human Player 2
@@ -330,7 +341,8 @@ export default function App() {
       roomCode,
       teamMode,
       botDifficulty,
-      phase: 'DEALING_1',
+      phase: 'SHUFFLING',
+      shuffleCount: 0,
       // The host chooses trump from their first four cards in the opening round.
       dealerIndex: 3,
       trumpSelectorIndex: 0,
@@ -355,16 +367,80 @@ export default function App() {
       messageSi: 'මුල් කාඩ්පත් 4 බෙදමින්...',
     };
 
-    broadcastState(fullState);
-    dealFirstPhase(fullState);
+    beginShuffle(fullState);
   };
 
   // --- Authoritative Game Loop ---
 
+  // Start every hand with an actual dealer shuffle. Dealer rotates once per
+  // round. Bot dealers auto-shuffle; a human dealer decides when to shuffle and
+  // when the dealer is ready to deal. Only the host changes the real deck.
+  const beginShuffle = (state: GameState) => {
+    const epoch = ++shuffleEpochRef.current;
+    shuffledDeckRef.current = createOmiDeck();
+    state.phase = 'SHUFFLING';
+    state.shuffleCount = 0;
+    state.activePlayerIndex = state.dealerIndex;
+    state.message = `${state.players[state.dealerIndex].name} is shuffling the deck...`;
+    state.messageSi = `${state.players[state.dealerIndex].name} කොළ අනමින් සිටී...`;
+    broadcastState(state);
+
+    const dealer = state.players[state.dealerIndex];
+    if (!dealer.isHuman) {
+      // Two visible riffle passes. The epoch + phase checks ensure an old bot
+      // timer can never shuffle or deal a new round/rematch accidentally.
+      [850, 1780].forEach(delay => {
+        setTimeout(() => {
+          const current = hostStateRef.current;
+          if (epoch !== shuffleEpochRef.current || !current ||
+              current.phase !== 'SHUFFLING' || current.roundNumber !== state.roundNumber) return;
+          applyShuffleAction(dealer.id, 'shuffle');
+        }, delay);
+      });
+      setTimeout(() => {
+        const current = hostStateRef.current;
+        if (epoch !== shuffleEpochRef.current || !current ||
+            current.phase !== 'SHUFFLING' || current.roundNumber !== state.roundNumber) return;
+        applyShuffleAction(dealer.id, 'deal');
+      }, 2800);
+    }
+  };
+
+  const applyShuffleAction = (playerId: number, action: 'shuffle' | 'deal') => {
+    if (!isHost || !hostStateRef.current) return;
+    const state = hostStateRef.current;
+    if (!canDealerShuffle(state, playerId, action) || !shuffledDeckRef.current) return;
+
+    if (action === 'shuffle') {
+      // The caller controls WHEN the shuffle occurs. Fisher-Yates on the host
+      // controls the secret permutation; arbitrary client-submitted decks are
+      // never trusted, even in a peer-to-peer session.
+      shuffledDeckRef.current = shuffleDeck(shuffledDeckRef.current);
+      const updated = { ...state, shuffleCount: (state.shuffleCount ?? 0) + 1 };
+      updated.message = `${updated.players[playerId].name} is shuffling... (${updated.shuffleCount})`;
+      updated.messageSi = `${updated.players[playerId].name} කොළ අනනවා... (${updated.shuffleCount})`;
+      broadcastState(updated);
+      return;
+    }
+
+    if ((state.shuffleCount ?? 0) < 1) return;
+    const epoch = shuffleEpochRef.current;
+    const dealing = { ...state, phase: 'DEALING_1' as const };
+    dealing.message = 'Dealing the first four cards...';
+    dealing.messageSi = 'පළමු කොළ හතර බෙදමින්...';
+    broadcastState(dealing);
+    setTimeout(() => {
+      if (epoch !== shuffleEpochRef.current || hostStateRef.current !== dealing ||
+          hostStateRef.current.phase !== 'DEALING_1') return;
+      dealFirstPhase(dealing);
+    }, 850);
+  };
+
   // Phase 1: Deal first 4 cards to each player
   const dealFirstPhase = (state: GameState) => {
     sound.playDeal();
-    const deck = shuffleDeck(createOmiDeck());
+    const deck = shuffledDeckRef.current || shuffleDeck(createOmiDeck());
+    shuffledDeckRef.current = null;
 
     // 4 cards each
     const p0 = deck.slice(0, 4);
@@ -588,9 +664,13 @@ export default function App() {
 
     broadcastState(state);
 
-    // Prepare next round after brief intermission
+    // Prepare next round after brief intermission. Cancel stale timers if a
+    // rematch has started meanwhile.
     setTimeout(() => {
-      startNextRound(state);
+      const current = hostStateRef.current;
+      if (current?.phase === 'ROUND_RESOLVING' && current.roundNumber === state.roundNumber) {
+        startNextRound(current);
+      }
     }, 3800);
   };
 
@@ -611,9 +691,7 @@ export default function App() {
       p.tricksWon = 0;
     }
 
-    state.phase = 'DEALING_1';
-    broadcastState(state);
-    dealFirstPhase(state);
+    beginShuffle(state);
   };
 
   // Start new rematch
@@ -622,6 +700,11 @@ export default function App() {
       if (webrtcRef.current) {
         webrtcRef.current.sendMessage({ type: 'REQUEST_REMATCH', playerId: mySeatIndex });
       }
+      return;
+    }
+    // Solo replay must not ask for an online peer connection.
+    if (hostStateRef.current?.roomCode === 'SOLO-PRACTICE') {
+      startSoloPractice();
       return;
     }
     handleStartGame();
@@ -639,6 +722,22 @@ export default function App() {
           playerId: mySeatIndex,
         });
       }
+    }
+  };
+
+  // Human dealer chooses to riffle (possibly several times), then deal.
+  const handleShuffleAction = (action: 'shuffle' | 'deal') => {
+    if (!renderState || renderState.phase !== 'SHUFFLING' ||
+        renderState.dealerIndex !== mySeatIndex) return;
+    if (isHost) {
+      applyShuffleAction(mySeatIndex, action);
+    } else {
+      webrtcRef.current?.sendMessage({
+        type: 'SHUFFLE_CARDS',
+        playerId: mySeatIndex,
+        roundNumber: renderState.roundNumber,
+        action,
+      });
     }
   };
 
@@ -844,6 +943,7 @@ export default function App() {
               mySeatIndex={mySeatIndex}
               onPlayCard={handlePlayCard}
               onSelectTrump={handleSelectTrump}
+              onShuffleAction={handleShuffleAction}
               reactions={reactions}
               lang={lang}
             />

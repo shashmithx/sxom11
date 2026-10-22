@@ -44,6 +44,21 @@ export function shuffleDeck(deck: Card[], rng: () => number = Math.random): Card
 }
 
 /**
+ * Only the actual dealer may shuffle a hand; at least one real shuffle is
+ * mandatory before dealing. Rejected actions must not change the secret deck.
+ */
+export function canDealerShuffle(
+  state: GameState,
+  playerId: number,
+  action: 'shuffle' | 'deal'
+): boolean {
+  if (state.phase !== 'SHUFFLING' || state.dealerIndex !== playerId ||
+      !state.players[playerId]) return false;
+  const count = state.shuffleCount ?? 0;
+  return action === 'shuffle' ? count < 8 : count >= 1;
+}
+
+/**
  * Direction in Sri Lankan OMI is counter-clockwise (to the right):
  * 0 (South) -> 1 (East) -> 2 (North) -> 3 (West) -> 0 (South)
  */

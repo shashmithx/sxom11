@@ -27,6 +27,37 @@ class SoundEffects {
   }
 
   /**
+   * Two soft paper-rustle bursts for a deck riffle (no audio assets needed).
+   */
+  public playShuffle() {
+    if (!this.enabled) return;
+    this.initCtx();
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    const length = Math.floor(ctx.sampleRate * 0.32);
+    const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
+    const samples = buffer.getChannelData(0);
+    for (let i = 0; i < length; i++) {
+      // Decaying, lightly modulated noise approximates cards brushing.
+      const decay = Math.pow(1 - i / length, 1.6);
+      samples[i] = (Math.random() * 2 - 1) * decay * (0.62 + 0.38 * Math.sin(i / 94));
+    }
+    const source = ctx.createBufferSource();
+    const filter = ctx.createBiquadFilter();
+    const gain = ctx.createGain();
+    source.buffer = buffer;
+    filter.type = 'bandpass';
+    filter.frequency.value = 1150;
+    filter.Q.value = 0.6;
+    gain.gain.value = 0.22;
+    source.connect(filter);
+    filter.connect(gain);
+    gain.connect(ctx.destination);
+    source.start();
+    source.stop(ctx.currentTime + 0.32);
+  }
+
+  /**
    * Card deal sound (crisp paper slide/flick)
    */
   public playDeal() {
