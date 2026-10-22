@@ -264,7 +264,7 @@ export const RoundResultModal: React.FC<RoundResultModalProps> = ({
         </div>
         <div className="mt-4 rounded-xl border border-amber-400/25 bg-amber-300/10 px-4 py-3">
           <div className="text-sm font-bold text-amber-100">
-            {isDraw ? t.roundCarry : t.roundAward}
+            {isDraw ? t.roundCarry : won ? t.roundYourAward : t.roundOpponentAward}
           </div>
           <div className="mt-1 text-2xl font-black tabular-nums text-amber-300">
             {isDraw ? score.carriedTokens : `+${summary.tokensAwarded}`}
