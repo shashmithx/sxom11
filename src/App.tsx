@@ -18,6 +18,7 @@ import {
 import {
   createOmiDeck,
   shuffleDeck,
+  canDealerShuffle,
   setupInitialPlayers,
   setupSoloPlayers,
   sanitizeStateForPlayer,
@@ -408,10 +409,7 @@ export default function App() {
   const applyShuffleAction = (playerId: number, action: 'shuffle' | 'deal') => {
     if (!isHost || !hostStateRef.current) return;
     const state = hostStateRef.current;
-    if (state.phase !== 'SHUFFLING' || state.dealerIndex !== playerId ||
-        !shuffledDeckRef.current) return;
-    if (!state.players[playerId]?.isHuman &&
-        action === 'deal' && (state.shuffleCount ?? 0) === 0) return;
+    if (!canDealerShuffle(state, playerId, action) || !shuffledDeckRef.current) return;
 
     if (action === 'shuffle') {
       // The caller controls WHEN the shuffle occurs. Fisher-Yates on the host
