@@ -5,6 +5,7 @@ import {
   isCardPlayable,
   determineTrickWinner,
   calculateRoundScoring,
+  makeRoundSummary,
   checkMatchWinner,
   getNextPlayerIndex,
   getTeamForSeat,
@@ -322,4 +323,77 @@ test('multiple dealer shuffles keep a complete 32-card deck without duplicates',
   assert.equal(new Set(second.map(card => card.id)).size, 32);
   assert.deepEqual(deck.map(card => card.id).sort(), second.map(card => card.id).sort());
   assert.notDeepEqual(deck, first);
+});
+
+test('every finished hand produces the same authoritative popup result for both players', () => {
+  const players = setupInitialPlayers('opposite_teams', 'Host', 'Friend');
+  const score: ScoreState = {
+    team1Tokens: 8, team2Tokens: 7, carriedTokens: 1,
+    team1RoundTricks: 3, team2RoundTricks: 5, targetTokens: 10,
+  };
+  const state: GameState = {
+    roomCode: 'OMI-TEST', teamMode: 'opposite_teams', botDifficulty: 'normal',
+    phase: 'ROUND_RESOLVING', dealerIndex: 3, trumpSelectorIndex: 0,
+    trumpSuit: 'hearts', activePlayerIndex: 1, currentTrick: null,
+    lastCompletedTrick: null, tricksHistory: [], players, roundNumber: 4,
+    roundSummaries: [], winningTeam: null, message: '', messageSi: '',
+    score,
+  };
+
+  const result = calculateRoundScoring(3, 5, 0, score);
+  assert.equal(result.winnerTeam, 2);
+  assert.equal(result.tokensAwarded, 3, 'defenders earn two plus one carried token');
+  const summary = makeRoundSummary(state, result);
+  state.roundSummaries.push(summary);
+  state.score = {
+    ...score,
+    team1Tokens: result.newTeam1Tokens,
+    team2Tokens: result.newTeam2Tokens,
+    carriedTokens: result.newCarriedTokens,
+  };
+
+  const host = sanitizeStateForPlayer(state, 0);
+  const guest = sanitizeStateForPlayer(state, 1);
+  assert.equal(host.roundSummaries.length, 1);
+  assert.deepEqual(host.roundSummaries[0], guest.roundSummaries[0]);
+  assert.equal(host.roundSummaries[0].winnerTeam, 2);
+  assert.equal(host.roundSummaries[0].handNumber, 4);
+  assert.equal(host.roundSummaries[0].tokensAwarded, 3);
+  assert.equal(host.players[0].team, 1, 'host views this as a loss');
+  assert.equal(guest.players[1].team, 2, 'guest views this as a win');
+  assert.equal(checkMatchWinner(state.score.team1Tokens, state.score.team2Tokens), 2);
+  assert.equal(host.score.team2Tokens, 10);
+});
+
+test('round summaries include Bada and Kapothi, and reject incomplete hands', () => {
+  const players = setupSoloPlayers('same_team', 'Solo');
+  const score: ScoreState = {
+    team1Tokens: 1, team2Tokens: 2, carriedTokens: 0,
+    team1RoundTricks: 4, team2RoundTricks: 4, targetTokens: 10,
+  };
+  const state: GameState = {
+    roomCode: 'SOLO-PRACTICE', teamMode: 'same_team', botDifficulty: 'normal',
+    phase: 'ROUND_RESOLVING', dealerIndex: 3, trumpSelectorIndex: 0,
+    trumpSuit: 'clubs', activePlayerIndex: 2, currentTrick: null,
+    lastCompletedTrick: null, tricksHistory: [], players, roundNumber: 1,
+    roundSummaries: [], winningTeam: null, message: '', messageSi: '',
+    score,
+  };
+  const draw = makeRoundSummary(state, calculateRoundScoring(4, 4, 0, score));
+  assert.equal(draw.winnerTeam, 0);
+  assert.equal(draw.tokensAwarded, 0);
+  assert.equal(draw.isKapothi, false);
+
+  state.score.team1RoundTricks = 8;
+  state.score.team2RoundTricks = 0;
+  const kapothi = makeRoundSummary(state, calculateRoundScoring(8, 0, 0, state.score));
+  assert.equal(kapothi.winnerTeam, 1);
+  assert.equal(kapothi.isKapothi, true);
+  assert.equal(kapothi.tokensAwarded, 3);
+
+  state.score.team2RoundTricks = 1;
+  assert.throws(
+    () => makeRoundSummary(state, calculateRoundScoring(8, 1, 0, state.score)),
+    /eight tricks/
+  );
 });

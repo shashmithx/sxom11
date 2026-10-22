@@ -232,6 +232,33 @@ export function calculateRoundScoring(
 }
 
 /**
+ * A completed hand is recorded exactly once by the authoritative host.
+ * The summary is sent with each sanitized state to both players and drives
+ * the results popup without any separate / unreliable UI-only message.
+ */
+export function makeRoundSummary(
+  state: GameState,
+  result: RoundScoringResult
+): RoundSummary {
+  if (!state.trumpSuit) throw new Error('Cannot finish a hand without trump');
+  const team1Tricks = state.score.team1RoundTricks;
+  const team2Tricks = state.score.team2RoundTricks;
+  if (team1Tricks + team2Tricks !== 8) {
+    throw new Error('A completed Omi hand must contain exactly eight tricks');
+  }
+  return {
+    handNumber: state.roundNumber,
+    trumpSuit: state.trumpSuit,
+    trumpSelector: state.trumpSelectorIndex,
+    team1Tricks,
+    team2Tricks,
+    winnerTeam: result.winnerTeam,
+    tokensAwarded: result.tokensAwarded,
+    isKapothi: result.isKapothi,
+  };
+}
+
+/**
  * First to 10 tokens wins the match
  */
 export function checkMatchWinner(team1Tokens: number, team2Tokens: number, target: number = 10): 1 | 2 | null {

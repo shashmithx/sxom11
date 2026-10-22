@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
+import { motion, useReducedMotion } from 'motion/react';
 import { CardComponent } from './CardComponent';
-import { Trick } from '../game/types';
+import { RoundSummary, ScoreState, Trick } from '../game/types';
 import { translations } from '../utils/i18n';
-import { X, Award, HelpCircle, History, Copy, Check } from 'lucide-react';
+import { X, HelpCircle, History, Copy, Check, Trophy, Frown, Scale } from 'lucide-react';
 
 interface LastTrickModalProps {
   isOpen: boolean;
@@ -202,8 +203,86 @@ export const ManualSDPModal: React.FC<ManualSDPModalProps> = ({
   );
 };
 
+interface RoundResultModalProps {
+  summary: RoundSummary;
+  score: ScoreState;
+  myTeam: 1 | 2;
+  lang: 'en' | 'si';
+  onClose: () => void;
+}
+
+/** A readable, short intermission between hands, on BOTH player devices. */
+export const RoundResultModal: React.FC<RoundResultModalProps> = ({
+  summary, score, myTeam, lang, onClose,
+}) => {
+  const t = translations[lang];
+  const reducedMotion = useReducedMotion() === true;
+  const isDraw = summary.winnerTeam === 0;
+  const won = summary.winnerTeam === myTeam;
+  const title = isDraw ? t.roundDraw : won ? t.roundWon : t.roundLost;
+  const Icon = isDraw ? Scale : won ? Trophy : Frown;
+  const accent = isDraw ? 'text-blue-300' : won ? 'text-amber-300' : 'text-rose-300';
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-[#050e0b]/90 px-3 py-5 backdrop-blur-md"
+      role="dialog" aria-modal="true" aria-labelledby="omi-round-result-heading">
+      <motion.div
+        key={`round-result-${summary.handNumber}`}
+        initial={reducedMotion ? false : { opacity: 0, scale: 0.86, y: 25 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        transition={{ duration: reducedMotion ? 0 : 0.35, type: 'spring', bounce: 0.2 }}
+        className="my-auto w-full max-w-md overflow-hidden rounded-[28px] border border-amber-400/55 bg-gradient-to-b from-[#164735] via-[#0d2c24] to-[#091d19] px-5 py-6 text-center text-white shadow-[0_25px_85px_rgba(0,0,0,0.75)] sm:p-8"
+      >
+        <div className="mb-2 inline-flex rounded-full border border-amber-300/30 bg-amber-300/10 px-3 py-1 text-xs font-bold text-amber-100/80">
+          {t.roundOver} · {summary.handNumber}
+        </div>
+        <div className={`mx-auto mt-3 flex h-16 w-16 items-center justify-center rounded-full border-2 border-current bg-black/20 ${accent}`}>
+          <Icon className="h-9 w-9" aria-hidden="true" />
+        </div>
+        <h2 id="omi-round-result-heading" className={`mt-4 text-2xl font-black leading-relaxed sm:text-3xl ${accent}`}>
+          {title}
+        </h2>
+        {summary.isKapothi && (
+          <span className="mt-2 inline-flex rounded-full bg-amber-400 px-4 py-1 text-xs font-black text-emerald-950">
+            {lang === 'si' ? 'කපෝති! අත් 8ම එකම පිලට' : 'KAPOTHI! All 8 tricks'}
+          </span>
+        )}
+        <div className="mt-5 grid grid-cols-[1fr_auto_1fr] items-center gap-2 rounded-2xl border border-white/15 bg-black/25 p-3">
+          <div className={`rounded-xl px-2 py-2 ${myTeam === 1 ? 'bg-blue-600/25 ring-1 ring-blue-400/50' : ''}`}>
+            <span className="block text-xs font-bold text-blue-200">{t.team} 1 {myTeam === 1 ? '• ' + t.youBadge : ''}</span>
+            <span className="text-3xl font-black tabular-nums text-white">{summary.team1Tricks}</span>
+            <span className="block text-[10px] text-emerald-100/65">{t.tricks}</span>
+            <span className="mt-1 block text-xs font-bold text-amber-200">{score.team1Tokens} {t.tokens}</span>
+          </div>
+          <span className="text-sm font-black text-amber-200/80">VS</span>
+          <div className={`rounded-xl px-2 py-2 ${myTeam === 2 ? 'bg-rose-600/25 ring-1 ring-rose-400/50' : ''}`}>
+            <span className="block text-xs font-bold text-rose-200">{t.team} 2 {myTeam === 2 ? '• ' + t.youBadge : ''}</span>
+            <span className="text-3xl font-black tabular-nums text-white">{summary.team2Tricks}</span>
+            <span className="block text-[10px] text-emerald-100/65">{t.tricks}</span>
+            <span className="mt-1 block text-xs font-bold text-amber-200">{score.team2Tokens} {t.tokens}</span>
+          </div>
+        </div>
+        <div className="mt-4 rounded-xl border border-amber-400/25 bg-amber-300/10 px-4 py-3">
+          <div className="text-sm font-bold text-amber-100">
+            {isDraw ? t.roundCarry : won ? t.roundYourAward : t.roundOpponentAward}
+          </div>
+          <div className="mt-1 text-2xl font-black tabular-nums text-amber-300">
+            {isDraw ? score.carriedTokens : `+${summary.tokensAwarded}`}
+          </div>
+        </div>
+        <p className="mt-4 text-xs text-emerald-100/70">{t.roundNextSoon}</p>
+        <button type="button" onClick={onClose}
+          className="mt-3 min-h-12 w-full rounded-xl bg-amber-400 px-4 py-3 text-sm font-black text-emerald-950 shadow-lg transition-colors hover:bg-amber-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300">
+          {t.roundContinue}
+        </button>
+      </motion.div>
+    </div>
+  );
+};
+
 interface VictoryModalProps {
   winnerTeam: 1 | 2;
+  myTeam: 1 | 2;
   team1Tokens: number;
   team2Tokens: number;
   onRematch: () => void;
@@ -211,45 +290,43 @@ interface VictoryModalProps {
 }
 
 export const VictoryModal: React.FC<VictoryModalProps> = ({
-  winnerTeam,
-  team1Tokens,
-  team2Tokens,
-  onRematch,
-  lang,
+  winnerTeam, myTeam, team1Tokens, team2Tokens, onRematch, lang,
 }) => {
   const t = translations[lang];
-
+  const reducedMotion = useReducedMotion() === true;
+  const didWin = winnerTeam === myTeam;
+  const Icon = didWin ? Trophy : Frown;
   return (
-    <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
-      <div className="bg-linear-to-b from-zinc-900 to-zinc-950 border-2 border-amber-400 rounded-3xl p-8 max-w-md w-full shadow-2xl text-center animate-in zoom-in-95">
-        <Award className="w-16 h-16 text-amber-400 mx-auto mb-3 animate-bounce" />
-        <h2 className="text-2xl sm:text-3xl font-black text-amber-300 font-serif">
-          {t.matchWinner}
+    <div className="fixed inset-0 z-[110] flex items-center justify-center overflow-y-auto bg-[#050e0b]/90 px-3 py-5 backdrop-blur-md"
+      role="dialog" aria-modal="true" aria-labelledby="omi-match-result-heading">
+      <motion.div
+        initial={reducedMotion ? false : { opacity: 0, scale: 0.85, y: 28 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        transition={{ duration: reducedMotion ? 0 : 0.4, type: 'spring', bounce: 0.2 }}
+        className="my-auto w-full max-w-md rounded-[30px] border-2 border-amber-400 bg-gradient-to-b from-[#164735] to-[#081e17] px-5 py-8 text-center shadow-[0_24px_85px_rgba(0,0,0,0.75)] sm:p-8">
+        <Icon className={`mx-auto mb-4 h-16 w-16 ${didWin ? 'text-amber-300' : 'text-rose-300'}`} aria-hidden="true" />
+        <h2 id="omi-match-result-heading" className={`text-2xl font-black leading-relaxed sm:text-3xl ${didWin ? 'text-amber-300' : 'text-rose-300'}`}>
+          {didWin ? t.matchWon : t.matchLost}
         </h2>
-        <p className="text-base sm:text-lg font-bold text-white mt-2">
+        <p className="mt-2 text-sm font-semibold text-white/85">
           {winnerTeam === 1 ? t.team1Wins : t.team2Wins}
         </p>
-
-        <div className="flex justify-center gap-6 my-6">
-          <div className="flex flex-col items-center">
-            <span className="text-xs text-blue-400 font-bold">Team 1</span>
-            <span className="text-3xl font-mono font-black text-amber-200">{team1Tokens}</span>
+        <div className="my-6 grid grid-cols-[1fr_auto_1fr] items-center gap-2 rounded-2xl border border-white/15 bg-black/30 px-3 py-4">
+          <div className="flex flex-col items-center gap-2">
+            <span className="text-xs font-bold text-blue-300">{t.team} 1 {myTeam === 1 ? '• ' + t.youBadge : ''}</span>
+            <span className="text-4xl font-black tabular-nums text-amber-100">{team1Tokens}</span>
           </div>
-          <div className="text-2xl text-zinc-600 font-light flex items-center">-</div>
-          <div className="flex flex-col items-center">
-            <span className="text-xs text-rose-400 font-bold">Team 2</span>
-            <span className="text-3xl font-mono font-black text-amber-200">{team2Tokens}</span>
+          <span className="text-xl font-bold text-white/50">:</span>
+          <div className="flex flex-col items-center gap-2">
+            <span className="text-xs font-bold text-rose-300">{t.team} 2 {myTeam === 2 ? '• ' + t.youBadge : ''}</span>
+            <span className="text-4xl font-black tabular-nums text-amber-100">{team2Tokens}</span>
           </div>
         </div>
-
-        <button
-          type="button"
-          onClick={onRematch}
-          className="cursor-pointer w-full bg-linear-to-r from-amber-500 via-amber-400 to-amber-500 text-zinc-950 font-black py-3.5 px-6 rounded-2xl shadow-xl shadow-amber-500/20 hover:scale-[1.02] active:scale-98 transition-all text-base"
-        >
+        <button type="button" onClick={onRematch}
+          className="min-h-12 w-full rounded-2xl bg-amber-400 px-6 py-3.5 text-sm font-black text-emerald-950 shadow-xl transition-colors hover:bg-amber-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300">
           {t.rematch}
         </button>
-      </div>
+      </motion.div>
     </div>
   );
 };
