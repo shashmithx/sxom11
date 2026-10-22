@@ -35,6 +35,10 @@ export class WebRTCManager {
   private eventSource: EventSource | null = null;
   private pollInterval: any = null;
   private pingInterval: any = null;
+  private pollInFlight = false;
+  // Keep relay packets in send order: concurrent HTTP requests can otherwise
+  // arrive in D1 reversed, making the other player's played cards disappear.
+  private relaySendQueue: Promise<void> = Promise.resolve();
 
   public roomCode: string = '';
   public myPeerId: string = '';
@@ -257,16 +261,24 @@ export class WebRTCManager {
       this.remotePeerId &&
       this.remotePeerId !== 'none'
     ) {
-      // Fallback via relay
-      fetch(`/api/rooms/${this.roomCode}/relay`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          from: this.myPeerId,
-          to: this.remotePeerId,
-          payload: msg,
-        }),
-      }).catch((e) => console.error('[WebRTC Relay Error]', e));
+      // Fallback via relay, serialized to preserve authoritative state seq.
+      const url = `/api/rooms/${this.roomCode}/relay`;
+      const payload = JSON.stringify({
+        from: this.myPeerId,
+        to: this.remotePeerId,
+        payload: msg,
+      });
+      this.relaySendQueue = this.relaySendQueue
+        .catch(() => undefined)
+        .then(async () => {
+          const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: payload,
+          });
+          if (!res.ok) throw new Error(`Relay HTTP ${res.status}`);
+        })
+        .catch((e) => console.error('[WebRTC Relay Error]', e));
     }
   }
 
@@ -323,7 +335,8 @@ export class WebRTCManager {
   private startPollingBackup() {
     if (this.pollInterval) clearInterval(this.pollInterval);
     this.pollInterval = setInterval(async () => {
-      if (!this.roomCode || !this.myPeerId) return;
+      if (!this.roomCode || !this.myPeerId || this.pollInFlight) return;
+      this.pollInFlight = true;
       try {
         const res = await fetch(
           `/api/rooms/${encodeURIComponent(this.roomCode)}/signals?peerId=${encodeURIComponent(this.myPeerId)}&since=${this.lastSignalTimestamp}&sinceSeq=${this.lastSignalSeq}`
@@ -333,7 +346,11 @@ export class WebRTCManager {
         if (data.success && Array.isArray(data.signals)) {
           for (const s of data.signals) this.processIncomingSignal(s);
         }
-      } catch (e) {}
+      } catch (e) {
+        console.warn('[WebRTC] Signal polling failed:', e);
+      } finally {
+        this.pollInFlight = false;
+      }
     }, 1200);
   }
 
