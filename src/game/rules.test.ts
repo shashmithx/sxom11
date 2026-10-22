@@ -10,6 +10,7 @@ import {
   getTeamForSeat,
   setupInitialPlayers,
   setupSoloPlayers,
+  canDealerShuffle,
   sanitizeStateForPlayer,
 } from './rules';
 import { botChooseTrumpSuit, botChooseCardToPlay } from './ai';
@@ -286,4 +287,39 @@ test('played cards and trick winners stay immutable in each network snapshot', (
   assert.equal(afterBotPlay.currentTrick?.winnerPlayerId, 1);
   assert.equal(afterBotPlay.score.team2RoundTricks, 1);
   assert.equal(afterBotPlay.players[0].hand.length, 0, 'host hand stays hidden on guest device');
+});
+
+test('only the dealer can shuffle, and they must shuffle before dealing', () => {
+  const players = setupInitialPlayers('opposite_teams', 'Host', 'Guest');
+  const round: GameState = {
+    roomCode: 'TEST', teamMode: 'opposite_teams', botDifficulty: 'normal',
+    phase: 'SHUFFLING', dealerIndex: 1, shuffleCount: 0,
+    trumpSelectorIndex: 2, trumpSuit: null, activePlayerIndex: 1,
+    currentTrick: null, lastCompletedTrick: null, tricksHistory: [],
+    players, roundNumber: 3, roundSummaries: [], winningTeam: null,
+    message: '', messageSi: '', score: {
+      team1Tokens: 0, team2Tokens: 0, carriedTokens: 0,
+      team1RoundTricks: 0, team2RoundTricks: 0, targetTokens: 10,
+    },
+  };
+  assert.equal(canDealerShuffle(round, 1, 'shuffle'), true);
+  assert.equal(canDealerShuffle(round, 0, 'shuffle'), false);
+  assert.equal(canDealerShuffle(round, 1, 'deal'), false);
+  round.shuffleCount = 2;
+  assert.equal(canDealerShuffle(round, 1, 'deal'), true);
+  round.shuffleCount = 8;
+  assert.equal(canDealerShuffle(round, 1, 'shuffle'), false);
+  round.phase = 'TRICK_PLAYING';
+  assert.equal(canDealerShuffle(round, 1, 'deal'), false);
+  assert.equal(canDealerShuffle(round, 1, 'shuffle'), false);
+});
+
+test('multiple dealer shuffles keep a complete 32-card deck without duplicates', () => {
+  const deck = createOmiDeck();
+  const first = shuffleDeck(deck, () => 0.5);
+  const second = shuffleDeck(first, () => 0.25);
+  assert.equal(second.length, 32);
+  assert.equal(new Set(second.map(card => card.id)).size, 32);
+  assert.deepEqual(deck.map(card => card.id).sort(), second.map(card => card.id).sort());
+  assert.notDeepEqual(deck, first);
 });
