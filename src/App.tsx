@@ -24,6 +24,7 @@ import {
   sanitizeStateForPlayer,
   determineTrickWinner,
   calculateRoundScoring,
+  makeRoundSummary,
   checkMatchWinner,
   getNextPlayerIndex,
   isCardPlayable,
@@ -33,7 +34,7 @@ import { WebRTCManager, ConnectionState } from './network/webrtc';
 import { OmiTable } from './components/OmiTable';
 import { ScoreBoard } from './components/ScoreBoard';
 import { Lobby } from './components/Lobby';
-import { LastTrickModal, HowToPlayModal, ManualSDPModal, VictoryModal } from './components/Modals';
+import { LastTrickModal, HowToPlayModal, ManualSDPModal, VictoryModal, RoundResultModal } from './components/Modals';
 import { sound } from './utils/sound';
 import { translations } from './utils/i18n';
 import {
@@ -77,6 +78,7 @@ export default function App() {
   // Modals & Drawers
   const [showHowToPlay, setShowHowToPlay] = useState(false);
   const [showLastTrick, setShowLastTrick] = useState(false);
+  const [roundResultDismissed, setRoundResultDismissed] = useState(false);
   const [showManualSDP, setShowManualSDP] = useState(false);
   const [manualLocalSDP, setManualLocalSDP] = useState('');
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
@@ -89,6 +91,11 @@ export default function App() {
   const hostStateRef = useRef<GameState | null>(null);
   // Local Render State (sanitized for this player)
   const [renderState, setRenderState] = useState<SanitizedGameState | null>(null);
+  // A round has a short intermission. Allow local dismissal without altering
+  // the authoritative gameplay phase or accidentally blocking the next round.
+  useEffect(() => {
+    if (renderState?.phase !== 'ROUND_RESOLVING') setRoundResultDismissed(false);
+  }, [renderState?.phase, renderState?.roundNumber]);
   const stateSeqRef = useRef<number>(0);
   // Undealt deck is host-private; neither shuffle inputs nor online snapshots
   // reveal its permutation to any player.
@@ -634,6 +641,10 @@ export default function App() {
       state.score
     );
 
+    // Store authoritative results BEFORE broadcasting so a solo player and
+    // both network clients see the same hand result and token award.
+    const roundSummary = makeRoundSummary(state, result);
+    state.roundSummaries = [...state.roundSummaries, roundSummary];
     state.score.team1Tokens = result.newTeam1Tokens;
     state.score.team2Tokens = result.newTeam2Tokens;
     state.score.carriedTokens = result.newCarriedTokens;
@@ -671,7 +682,7 @@ export default function App() {
       if (current?.phase === 'ROUND_RESOLVING' && current.roundNumber === state.roundNumber) {
         startNextRound(current);
       }
-    }, 3800);
+    }, 7500);
   };
 
   // Next Round / Hand setup
@@ -987,10 +998,24 @@ export default function App() {
         )}
       </main>
 
-      {/* MATCH VICTORY MODAL */}
+      {/* Visible after all eight tricks. Both peers read the same host result. */}
+      {renderState?.phase === 'ROUND_RESOLVING' &&
+        !roundResultDismissed &&
+        renderState.roundSummaries.at(-1)?.handNumber === renderState.roundNumber && (
+          <RoundResultModal
+            summary={renderState.roundSummaries[renderState.roundSummaries.length - 1]}
+            myTeam={renderState.players[mySeatIndex]?.team ?? 1}
+            score={renderState.score}
+            lang={lang}
+            onClose={() => setRoundResultDismissed(true)}
+          />
+      )}
+
+      {/* Match result at ten tokens, always personalized for both players. */}
       {renderState && renderState.phase === 'MATCH_OVER' && renderState.winningTeam && (
         <VictoryModal
           winnerTeam={renderState.winningTeam}
+          myTeam={renderState.players[mySeatIndex]?.team ?? 1}
           team1Tokens={renderState.score.team1Tokens}
           team2Tokens={renderState.score.team2Tokens}
           onRematch={startNewMatch}
