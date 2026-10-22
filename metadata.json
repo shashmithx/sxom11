@@ -1,0 +1,6 @@
+{
+  "name": "SHANEX OMI",
+  "description": "Online P2P Multiplayer Sri Lankan OMI Card Game with intelligent AI bots, WebRTC signaling, custom tables, authentic rules, and Sinhala/English support.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
