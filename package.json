@@ -11,7 +11,8 @@
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
     "dev:worker": "npm run build && wrangler dev",
-    "deploy": "wrangler deploy"
+    "deploy": "wrangler deploy",
+    "test": "node --import tsx --test src/game/rules.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
