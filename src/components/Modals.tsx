@@ -3,7 +3,7 @@ import { motion, useReducedMotion } from 'motion/react';
 import { CardComponent } from './CardComponent';
 import { RoundSummary, ScoreState, Trick } from '../game/types';
 import { translations } from '../utils/i18n';
-import { X, Award, HelpCircle, History, Copy, Check, Trophy, Frown, Scale } from 'lucide-react';
+import { X, HelpCircle, History, Copy, Check, Trophy, Frown, Scale } from 'lucide-react';
 
 interface LastTrickModalProps {
   isOpen: boolean;
