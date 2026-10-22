@@ -9,7 +9,9 @@
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0",
     "clean": "rm -rf dist",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "dev:worker": "npm run build && wrangler dev",
+    "deploy": "wrangler deploy"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
@@ -32,6 +34,7 @@
     "esbuild": "^0.25.0",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.21.0",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "wrangler": "^4.45.0"
   }
 }
