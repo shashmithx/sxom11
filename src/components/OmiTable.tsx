@@ -5,12 +5,14 @@ import { CardComponent, SUIT_SYMBOL } from './CardComponent';
 import { determineTrickWinner, isCardPlayable } from '../game/rules';
 import { translations } from '../utils/i18n';
 import { sound } from '../utils/sound';
+import { ShuffleDeck } from './ShuffleDeck';
 
 interface OmiTableProps {
   gameState: SanitizedGameState;
   mySeatIndex: number;
   onPlayCard: (cardId: string) => void;
   onSelectTrump: (suit: Suit) => void;
+  onShuffleAction: (action: 'shuffle' | 'deal') => void;
   reactions: Record<number, string>;
   lang: 'en' | 'si';
 }
@@ -51,6 +53,7 @@ export const OmiTable: React.FC<OmiTableProps> = ({
   mySeatIndex,
   onPlayCard,
   onSelectTrump,
+  onShuffleAction,
   reactions,
   lang,
 }) => {
@@ -378,6 +381,18 @@ export const OmiTable: React.FC<OmiTableProps> = ({
         </div>
         {playerBadge(seats[0], true)}
       </div>
+
+      {gameState.phase === 'SHUFFLING' && (
+        <ShuffleDeck
+          dealerName={gameState.players[gameState.dealerIndex].name}
+          isMyTurn={gameState.dealerIndex === mySeatIndex}
+          count={gameState.shuffleCount ?? 0}
+          roundNumber={gameState.roundNumber}
+          lang={lang}
+          onShuffle={() => onShuffleAction('shuffle')}
+          onDeal={() => onShuffleAction('deal')}
+        />
+      )}
 
       {isSelectingTrump && (
         <div
