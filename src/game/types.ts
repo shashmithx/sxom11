@@ -26,6 +26,7 @@ export interface Trick {
 
 export type GamePhase =
   | 'LOBBY'
+  | 'SHUFFLING'
   | 'DEALING_1'
   | 'SELECTING_TRUMP'
   | 'DEALING_2'
@@ -70,6 +71,7 @@ export interface GameState {
   botDifficulty: BotDifficulty;
   phase: GamePhase;
   dealerIndex: number; // 0..3
+  shuffleCount?: number; // authoritative dealer shuffle progress (cards remain hidden)
   trumpSelectorIndex: number; // 0..3
   trumpSuit: Suit | null;
   activePlayerIndex: number; // 0..3
@@ -104,6 +106,7 @@ export type WebRTCMessage =
   | { type: 'STATE_UPDATE'; state: SanitizedGameState; seq: number }
   | { type: 'SELECT_TRUMP'; suit: Suit; playerId: number }
   | { type: 'PLAY_CARD'; cardId: string; playerId: number }
+  | { type: 'SHUFFLE_CARDS'; playerId: number; roundNumber: number; action: 'shuffle' | 'deal' }
   | { type: 'EMOJI_REACTION'; emoji: string; fromSeat: number }
   | { type: 'REQUEST_REMATCH'; playerId: number }
   | { type: 'ACCEPT_REMATCH'; playerId: number }
