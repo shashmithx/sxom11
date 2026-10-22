@@ -9,11 +9,11 @@ interface ScoreBoardProps {
   lang: 'en' | 'si';
 }
 
-const SUIT_ICONS: Record<Suit, { symbol: string; color: string; nameEn: string; nameSi: string }> = {
-  spades: { symbol: '♠', color: 'text-zinc-100', nameEn: 'Spades', nameSi: 'ඉස්පික' },
-  hearts: { symbol: '♥', color: 'text-rose-500', nameEn: 'Hearts', nameSi: 'හර්ත' },
-  diamonds: { symbol: '♦', color: 'text-rose-500', nameEn: 'Diamonds', nameSi: 'රූබ' },
-  clubs: { symbol: '♣', color: 'text-zinc-100', nameEn: 'Clubs', nameSi: 'කලාවර' },
+const SUIT_ICONS: Record<Suit, { symbol: string; color: string }> = {
+  spades: { symbol: '♠', color: 'text-zinc-100' },
+  hearts: { symbol: '♥', color: 'text-rose-500' },
+  diamonds: { symbol: '♦', color: 'text-rose-500' },
+  clubs: { symbol: '♣', color: 'text-zinc-100' },
 };
 
 export const ScoreBoard: React.FC<ScoreBoardProps> = ({ score, trumpSuit, roundNumber, lang }) => {
@@ -29,7 +29,7 @@ export const ScoreBoard: React.FC<ScoreBoardProps> = ({ score, trumpSuit, roundN
         <div className="flex flex-col">
           <span className="text-[11px] sm:text-xs font-bold text-blue-300 uppercase tracking-wider flex items-center gap-1">
             <span className="w-2 h-2 rounded-full bg-blue-500 inline-block animate-pulse" />
-            Team 1
+            {t.team} 1
           </span>
           <div className="flex items-center gap-1">
             <span className="text-[10px] sm:text-xs text-zinc-400">
@@ -47,7 +47,7 @@ export const ScoreBoard: React.FC<ScoreBoardProps> = ({ score, trumpSuit, roundN
               {SUIT_ICONS[trumpSuit].symbol}
             </span>
             <span className="text-xs sm:text-sm font-bold text-amber-300 font-serif">
-              {lang === 'si' ? SUIT_ICONS[trumpSuit].nameSi : SUIT_ICONS[trumpSuit].nameEn}
+              {t[trumpSuit]}
             </span>
           </div>
         ) : (
@@ -65,7 +65,7 @@ export const ScoreBoard: React.FC<ScoreBoardProps> = ({ score, trumpSuit, roundN
               +{score.carriedTokens} {t.carried}
             </span>
           )}
-          <span className="text-zinc-500 font-mono">10 to win</span>
+          <span className="text-zinc-500 font-mono">{t.winTarget}</span>
         </div>
       </div>
 
@@ -73,7 +73,7 @@ export const ScoreBoard: React.FC<ScoreBoardProps> = ({ score, trumpSuit, roundN
       <div className="flex items-center gap-2 text-right">
         <div className="flex flex-col items-end">
           <span className="text-[11px] sm:text-xs font-bold text-rose-300 uppercase tracking-wider flex items-center gap-1">
-            Team 2
+            {t.team} 2
             <span className="w-2 h-2 rounded-full bg-rose-500 inline-block animate-pulse" />
           </span>
           <div className="flex items-center gap-1">
