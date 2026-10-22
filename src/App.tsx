@@ -19,6 +19,7 @@ import {
   createOmiDeck,
   shuffleDeck,
   setupInitialPlayers,
+  setupSoloPlayers,
   sanitizeStateForPlayer,
   determineTrickWinner,
   calculateRoundScoring,
@@ -232,14 +233,7 @@ export default function App() {
   const startSoloPractice = () => {
     setIsHost(true);
     setMySeatIndex(0);
-    const initialPlayers = setupInitialPlayers(teamMode, playerName, 'Guest Player');
-    // Solo must have exactly ONE human in either team arrangement.
-    for (const player of initialPlayers) {
-      if (player.id !== 0) {
-        player.isHuman = false;
-        if (player.name === 'Guest Player') player.name = 'Bot Sunil';
-      }
-    }
+    const initialPlayers = setupSoloPlayers(teamMode, playerName);
 
     const fullState: GameState = {
       roomCode: 'SOLO-PRACTICE',
