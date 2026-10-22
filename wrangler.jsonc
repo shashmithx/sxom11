@@ -7,11 +7,15 @@
     "directory": "./dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*"]
+    "run_worker_first": [
+      "/api/*"
+    ]
   },
   "d1_databases": [
     {
-      "binding": "ROOMS_DB"
+      "binding": "ROOMS_DB",
+      "database_name": "sxom11-rooms-db",
+      "database_id": "c68afc3b-6108-4483-9da3-533f67477a0f"
     }
   ]
 }
