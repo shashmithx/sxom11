@@ -44,6 +44,13 @@ export const OmiTable: React.FC<OmiTableProps> = ({
     setTrumpSubmitting(false);
   }, [gameState.roundNumber, isSelectingTrump]);
 
+  // A lost signaling packet must not leave the guest's trump controls locked.
+  useEffect(() => {
+    if (!trumpSubmitting || !isSelectingTrump) return;
+    const retryTimer = window.setTimeout(() => setTrumpSubmitting(false), 5000);
+    return () => window.clearTimeout(retryTimer);
+  }, [trumpSubmitting, isSelectingTrump]);
+
   const seats = useMemo(
     () => [0, 1, 2, 3].map(offset => gameState.players[(mySeatIndex + offset) % 4]),
     [gameState.players, mySeatIndex]
