@@ -19,6 +19,7 @@ import {
   createOmiDeck,
   shuffleDeck,
   setupInitialPlayers,
+  setupSoloPlayers,
   sanitizeStateForPlayer,
   determineTrickWinner,
   calculateRoundScoring,
@@ -138,7 +139,7 @@ export default function App() {
       }
     } else if (msg.type === 'SELECT_TRUMP' && isHost) {
       // Guest selected trump
-      applyTrumpSelection(msg.suit);
+      applyTrumpSelection(msg.suit, msg.playerId);
     } else if (msg.type === 'PLAY_CARD' && isHost) {
       // Guest played a card
       applyCardPlay(msg.playerId, msg.cardId);
@@ -232,20 +233,19 @@ export default function App() {
   const startSoloPractice = () => {
     setIsHost(true);
     setMySeatIndex(0);
-    const initialPlayers = setupInitialPlayers(teamMode, playerName, 'Guest Player');
-    // In solo practice, seats 1, 2, 3 are all bots
-    initialPlayers[2].isHuman = false;
-    initialPlayers[2].name = 'Bot Sunil';
+    const initialPlayers = setupSoloPlayers(teamMode, playerName);
 
     const fullState: GameState = {
       roomCode: 'SOLO-PRACTICE',
       teamMode,
       botDifficulty,
       phase: 'DEALING_1',
-      dealerIndex: 0,
-      trumpSelectorIndex: 1, // player to dealer's right
+      // First round: seat 3 deals, so the human host (seat 0) calls trump.
+      // Later rounds rotate the dealer and selector in the normal Omi order.
+      dealerIndex: 3,
+      trumpSelectorIndex: 0,
       trumpSuit: null,
-      activePlayerIndex: 1,
+      activePlayerIndex: 0,
       currentTrick: null,
       lastCompletedTrick: null,
       tricksHistory: [],
@@ -283,10 +283,11 @@ export default function App() {
       teamMode,
       botDifficulty,
       phase: 'DEALING_1',
-      dealerIndex: 0,
-      trumpSelectorIndex: 1,
+      // The host chooses trump from their first four cards in the opening round.
+      dealerIndex: 3,
+      trumpSelectorIndex: 0,
       trumpSuit: null,
-      activePlayerIndex: 1,
+      activePlayerIndex: 0,
       currentTrick: null,
       lastCompletedTrick: null,
       tricksHistory: [],
@@ -341,16 +342,21 @@ export default function App() {
     const selector = state.players[state.trumpSelectorIndex];
     if (!selector.isHuman) {
       setTimeout(() => {
-        const chosenTrump = botChooseTrumpSuit(selector.hand, state.botDifficulty);
-        applyTrumpSelection(chosenTrump);
+        const latestState = hostStateRef.current;
+        if (latestState?.phase !== 'SELECTING_TRUMP' || latestState.trumpSelectorIndex !== selector.id) return;
+        const chosenTrump = botChooseTrumpSuit(latestState.players[selector.id].hand, latestState.botDifficulty);
+        applyTrumpSelection(chosenTrump, selector.id);
       }, 900);
     }
   };
 
   // Trump suit selected -> Deal Phase 2 (remaining 4 cards each -> 8 total)
-  const applyTrumpSelection = (suit: Suit) => {
+  const applyTrumpSelection = (suit: Suit, selectorId: number) => {
     if (!isHost || !hostStateRef.current) return;
     const state = { ...hostStateRef.current };
+    // Accept a trump choice only from the active caller while the first four cards are dealt.
+    if (state.phase !== 'SELECTING_TRUMP' || state.trumpSelectorIndex !== selectorId) return;
+    if (!(['spades', 'hearts', 'diamonds', 'clubs'] as Suit[]).includes(suit)) return;
     state.trumpSuit = suit;
     sound.playTrumpSelect();
 
@@ -579,7 +585,7 @@ export default function App() {
   // Human player selected trump
   const handleSelectTrump = (suit: Suit) => {
     if (isHost) {
-      applyTrumpSelection(suit);
+      applyTrumpSelection(suit, mySeatIndex);
     } else {
       if (webrtcRef.current) {
         webrtcRef.current.sendMessage({
