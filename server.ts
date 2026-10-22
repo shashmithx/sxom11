@@ -131,6 +131,7 @@ async function startServer() {
       success: true,
       roomCode: room.code,
       guestId,
+      hostId: room.hostId,
       hostName: room.hostName,
       teamMode: room.teamMode,
       botDifficulty: room.botDifficulty,
