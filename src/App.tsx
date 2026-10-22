@@ -89,6 +89,13 @@ export default function App() {
   // Local Render State (sanitized for this player)
   const [renderState, setRenderState] = useState<SanitizedGameState | null>(null);
   const stateSeqRef = useRef<number>(0);
+  const lastGuestSeqRef = useRef(0);
+  const guestFramesRef = useRef<{ seq: number; state: SanitizedGameState }[]>([]);
+  const guestFrameTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The WebRTC event listener is installed once. Always dispatch through the
+  // latest React render: otherwise a guest still uses the initial isHost=true
+  // closure and can silently ignore remote gameplay actions.
+  const latestRemoteHandlerRef = useRef<(msg: WebRTCMessage) => void>(() => {});
 
   // Initialize WebRTC Manager on Mount
   useEffect(() => {
@@ -98,13 +105,14 @@ export default function App() {
     mgr.onStatus((status, msg) => {
       setPeerStatus(status);
       if (msg) setPeerStatusMsg(msg);
-      if (status === 'connected_p2p' || status === 'connected_relay') {
+      if (status === 'connected_p2p' || status === 'connected_relay' ||
+          (status === 'connecting' && !!mgr.remotePeerId)) {
         setHasPeerJoined(true);
       }
     });
 
     mgr.onMessage((msg: WebRTCMessage) => {
-      handleRemoteMessage(msg);
+      latestRemoteHandlerRef.current(msg);
     });
 
     // Check URL parameters for 1-click room joining (?room=OMI-XXXX) or ?autostart=1
@@ -129,31 +137,60 @@ export default function App() {
 
     return () => {
       clearInterval(pingTimer);
+      if (guestFrameTimerRef.current) clearTimeout(guestFrameTimerRef.current);
+      guestFramesRef.current = [];
       mgr.disconnect();
     };
   }, []);
 
   // --- Remote Message Handling ---
+  // D1 polling can return multiple STATE_UPDATE packets in one tick. React
+  // batches synchronous setState calls, skipping over the bot cards entirely.
+  // Present them one snapshot at a time (~300ms each) so every played card is
+  // visibly dealt to the table, while preserving the authoritative host order.
+  const playNextGuestFrame = () => {
+    const next = guestFramesRef.current.shift();
+    if (!next) {
+      guestFrameTimerRef.current = null;
+      return;
+    }
+
+    setRenderState(next.state);
+    setMySeatIndex(next.state.mySeatIndex);
+    if (next.state.phase === 'MATCH_OVER' && sound.enabled) {
+      sound.playKapothi();
+    }
+
+    guestFrameTimerRef.current = setTimeout(playNextGuestFrame, 300);
+  };
+
   const handleRemoteMessage = (msg: WebRTCMessage) => {
     if (msg.type === 'STATE_UPDATE') {
-      // Guest receives state from Host
-      setRenderState(msg.state);
-      setMySeatIndex(msg.state.mySeatIndex);
-      if (msg.state.phase === 'MATCH_OVER' && soundEnabled) {
-        sound.playKapothi();
+      if (isHost || msg.seq <= lastGuestSeqRef.current) return;
+      lastGuestSeqRef.current = msg.seq;
+      // Drop oldest frames only during an unusually large backlog, to keep
+      // interactive turns responsive after reconnection.
+      if (guestFramesRef.current.length >= 8) {
+        guestFramesRef.current.splice(0, guestFramesRef.current.length - 3);
       }
+      guestFramesRef.current.push({ seq: msg.seq, state: msg.state });
+      if (guestFrameTimerRef.current === null) playNextGuestFrame();
     } else if (msg.type === 'SELECT_TRUMP' && isHost) {
-      // Guest selected trump
-      applyTrumpSelection(msg.suit, msg.playerId);
+      // Never allow the guest to submit a trump choice for an AI/host seat.
+      const state = hostStateRef.current;
+      const guestSeat = state?.teamMode === 'same_team' ? 2 : 1;
+      if (state && msg.playerId === guestSeat) applyTrumpSelection(msg.suit, msg.playerId);
     } else if (msg.type === 'PLAY_CARD' && isHost) {
-      // Guest played a card
-      applyCardPlay(msg.playerId, msg.cardId);
+      const state = hostStateRef.current;
+      const guestSeat = state?.teamMode === 'same_team' ? 2 : 1;
+      if (state && msg.playerId === guestSeat) applyCardPlay(msg.playerId, msg.cardId);
     } else if (msg.type === 'EMOJI_REACTION') {
       triggerEmoji(msg.fromSeat, msg.emoji);
     } else if (msg.type === 'REQUEST_REMATCH' && isHost) {
       startNewMatch();
     }
   };
+  latestRemoteHandlerRef.current = handleRemoteMessage;
 
   // Broadcast sanitized state to Guest and update local render state
   const broadcastState = (fullState: GameState) => {
@@ -276,7 +313,13 @@ export default function App() {
 
   // Host starts the OMI match with connected Human Player 2
   const handleStartGame = () => {
-    if (!isHost) return;
+    if (!isHost || !hasPeerJoined || !webrtcRef.current?.remotePeerId) {
+      setToastError(lang === 'si'
+        ? 'Player 2 සම්බන්ධ වූ පසුව තරගය පටන්ගන්න. තනිව ක්‍රීඩා කිරීමට Solo තෝරන්න.'
+        : 'Wait for Player 2 to join, or choose Solo practice.');
+      setTimeout(() => setToastError(null), 4500);
+      return;
+    }
     const initialPlayers = setupInitialPlayers(
       teamMode,
       playerName,
@@ -441,7 +484,9 @@ export default function App() {
       setTimeout(() => {
         if (!hostStateRef.current || hostStateRef.current.phase !== 'TRICK_PLAYING') return;
         const current = hostStateRef.current;
+        if (current.activePlayerIndex !== state.activePlayerIndex) return;
         const bot = current.players[current.activePlayerIndex];
+        if (bot.isHuman || bot.hand.length === 0) return;
         const chosenCard = botChooseCardToPlay(
           bot.id,
           bot.hand,
@@ -476,21 +521,31 @@ export default function App() {
 
     // Winner of the trick leads the next trick!
     state.activePlayerIndex = winnerId;
+    state.message = `${winnerPlayer.name} won this trick!`;
+    state.messageSi = `${winnerPlayer.name} අත දිනුවා!`;
+
+    // Crucial: the earlier TRICK_RESOLVING broadcast happened before the
+    // winner was known. Publish the completed trick and winner so BOTH
+    // browsers can show all four cards and the capture animation.
+    broadcastState(state);
+    const finishedTrick = state.currentTrick;
 
     setTimeout(() => {
+      const current = hostStateRef.current;
+      if (!current || current.phase !== 'TRICK_RESOLVING' ||
+          current.currentTrick !== finishedTrick) return;
       sound.playTrickCollect();
-      state.currentTrick = null;
+      const nextState = { ...current, currentTrick: null };
 
-      // Check if round is over (8 tricks played, hands empty)
-      const totalTricks = state.score.team1RoundTricks + state.score.team2RoundTricks;
+      const totalTricks = nextState.score.team1RoundTricks + nextState.score.team2RoundTricks;
       if (totalTricks === 8) {
-        resolveCompletedRound(state);
+        resolveCompletedRound(nextState);
       } else {
-        state.phase = 'TRICK_PLAYING';
-        broadcastState(state);
-        checkNextTurn(state);
+        nextState.phase = 'TRICK_PLAYING';
+        broadcastState(nextState);
+        checkNextTurn(nextState);
       }
-    }, 1300);
+    }, 1800);
   };
 
   // Resolve completed 8-trick OMI round

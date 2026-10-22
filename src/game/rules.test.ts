@@ -251,3 +251,39 @@ test('sanitization hides opponent hands and never leaks undealt deck', () => {
   assert.equal('remainingDeck' in host, false);
   assert.equal('remainingDeck' in guest, false);
 });
+
+test('played cards and trick winners stay immutable in each network snapshot', () => {
+  const deck = createOmiDeck();
+  const players = setupInitialPlayers('opposite_teams', 'Host', 'Friend');
+  players[0].hand = [deck[0]];
+  players[1].hand = [deck[1]];
+  const currentTrick: Trick = {
+    leadSuit: deck[0].suit,
+    cards: [{ playerId: 0, card: deck[0] }],
+  };
+  const state: GameState = {
+    roomCode: 'OMI-TEST', teamMode: 'opposite_teams', botDifficulty: 'normal',
+    phase: 'TRICK_PLAYING', dealerIndex: 3, trumpSelectorIndex: 0,
+    trumpSuit: 'hearts', activePlayerIndex: 1, currentTrick,
+    lastCompletedTrick: null, tricksHistory: [], players, roundNumber: 1,
+    roundSummaries: [], winningTeam: null, message: '', messageSi: '',
+    score: {
+      team1Tokens: 0, team2Tokens: 0, carriedTokens: 0,
+      team1RoundTricks: 0, team2RoundTricks: 0, targetTokens: 10,
+    },
+  };
+
+  const beforeBotPlay = sanitizeStateForPlayer(state, 1);
+  state.currentTrick!.cards.push({ playerId: 1, card: deck[1] });
+  state.currentTrick!.winnerPlayerId = 1;
+  state.score.team2RoundTricks++;
+  const afterBotPlay = sanitizeStateForPlayer(state, 1);
+
+  assert.equal(beforeBotPlay.currentTrick?.cards.length, 1);
+  assert.equal(beforeBotPlay.currentTrick?.winnerPlayerId, undefined);
+  assert.equal(beforeBotPlay.score.team2RoundTricks, 0);
+  assert.equal(afterBotPlay.currentTrick?.cards.length, 2);
+  assert.equal(afterBotPlay.currentTrick?.winnerPlayerId, 1);
+  assert.equal(afterBotPlay.score.team2RoundTricks, 1);
+  assert.equal(afterBotPlay.players[0].hand.length, 0, 'host hand stays hidden on guest device');
+});

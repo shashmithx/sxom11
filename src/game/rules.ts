@@ -280,10 +280,15 @@ export function sanitizeStateForPlayer(gameState: GameState, seatIndex: number):
   // Host-only undealt cards must never be shipped to the other player's browser.
   // The deck is stored as an internal property by the current game loop.
   const { remainingDeck: _hostOnlyDeck, ...publicState } = gameState as GameState & { remainingDeck?: Card[] };
+  // Important: the host continues to mutate its authoritative game objects
+  // while React is rendering and relay requests are in flight. A deep snapshot
+  // prevents previous frames (including the current trick) changing underneath
+  // React before the next state update arrives.
+  const snapshot = structuredClone(publicState);
   return {
-    ...publicState,
+    ...snapshot,
     mySeatIndex: seatIndex,
-    players: gameState.players.map((p) => ({
+    players: snapshot.players.map((p) => ({
       id: p.id,
       name: p.name,
       isHuman: p.isHuman,

@@ -300,13 +300,24 @@ export const Lobby: React.FC<LobbyProps> = ({
             {/* Start Game Action */}
             <div className="w-full max-w-sm flex flex-col gap-2">
               {isHost && (
-                <button
-                  type="button"
-                  onClick={onStartGame}
-                  className="cursor-pointer w-full bg-linear-to-r from-amber-500 via-amber-400 to-amber-500 text-zinc-950 font-black py-3.5 px-8 rounded-2xl shadow-xl shadow-amber-500/20 hover:scale-[1.02] active:scale-98 transition-all text-base"
-                >
-                  {t.startGame}
-                </button>
+                <>
+                  <button
+                    type="button"
+                    onClick={onStartGame}
+                    disabled={!hasPeerJoined}
+                    aria-describedby={!hasPeerJoined ? 'omi-join-required' : undefined}
+                    className="w-full bg-linear-to-r from-amber-500 via-amber-400 to-amber-500 text-zinc-950 font-black py-3.5 px-8 rounded-2xl shadow-xl shadow-amber-500/20 hover:scale-[1.02] active:scale-98 transition-all text-base disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none"
+                  >
+                    {t.startGame}
+                  </button>
+                  {!hasPeerJoined && (
+                    <p id="omi-join-required" className="text-center text-xs leading-relaxed text-amber-200/80">
+                      {lang === 'si'
+                        ? 'ඔන්ලයින් තරගයට Player 2 එකතු වනතුරු ඉන්න. තනිව සෙල්ලම් කරන්න නම් Solo තෝරන්න.'
+                        : 'Waiting for Player 2. Choose Solo practice to play with three bots.'}
+                    </p>
+                  )}
+                </>
               )}
 
               {/* Manual WebRTC fallback button */}
