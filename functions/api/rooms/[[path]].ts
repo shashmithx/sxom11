@@ -1,8 +1,8 @@
 /**
- * Cloudflare Pages Functions room/signaling API.
+ * Shared Cloudflare Pages Functions and Workers room/signaling API.
  * Route: /api/rooms/*  (this file is a multipath route)
  *
- * Cloudflare Pages cannot run the Node/Express server.ts. D1 provides
+ * Cloudflare edge runtimes cannot run the Node/Express server.ts. D1 provides
  * cross-request persistence for rooms, WebRTC signaling, and relay packets.
  */
 type Scalar = string | number | null;
@@ -91,10 +91,51 @@ async function appendMessage(
     .bind(Date.now(), room.code).run();
 }
 
+// One initialization promise per isolate. IF NOT EXISTS makes it safe across
+// separate Cloudflare isolates and allows no-manual-SQL first deployment.
+let schemaReady: Promise<void> | null = null;
+async function ensureSchema(db: Database): Promise<void> {
+  if (!schemaReady) {
+    schemaReady = (async () => {
+      await db.prepare(`CREATE TABLE IF NOT EXISTS omi_rooms (
+        code TEXT PRIMARY KEY,
+        host_id TEXT NOT NULL,
+        host_name TEXT NOT NULL,
+        guest_id TEXT,
+        guest_name TEXT,
+        team_mode TEXT NOT NULL,
+        bot_difficulty TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        last_active INTEGER NOT NULL
+      )`).run();
+      await db.prepare(`CREATE TABLE IF NOT EXISTS omi_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        room_code TEXT NOT NULL,
+        from_peer TEXT NOT NULL,
+        to_peer TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY (room_code) REFERENCES omi_rooms(code) ON DELETE CASCADE
+      )`).run();
+      await db.prepare(
+        'CREATE INDEX IF NOT EXISTS idx_omi_messages_recipient ON omi_messages (room_code, to_peer, id)'
+      ).run();
+      await db.prepare(
+        'CREATE INDEX IF NOT EXISTS idx_omi_rooms_last_active ON omi_rooms (last_active)'
+      ).run();
+    })().catch(error => {
+      schemaReady = null; // retry after transient D1 failure
+      throw error;
+    });
+  }
+  await schemaReady;
+}
+
 export async function onRequest({ request, env }: PagesContext): Promise<Response> {
   const db = env.ROOMS_DB;
   if (!db) {
-    return fail(503, 'ROOMS_DB binding is missing. Configure the Cloudflare Pages D1 binding and redeploy.');
+    return fail(503, 'ROOMS_DB binding is missing. Configure the Cloudflare Worker or Pages D1 binding and redeploy.');
   }
 
   const url = new URL(request.url);
@@ -102,13 +143,9 @@ export async function onRequest({ request, env }: PagesContext): Promise<Respons
   const method = request.method.toUpperCase();
 
   try {
+    await ensureSchema(db);
+
     if (method === 'GET' && parts.length === 1 && parts[0] === 'health') {
-      const tables = await db.prepare(
-        "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('omi_rooms', 'omi_messages')"
-      ).all<{ name: string }>();
-      if (tables.results.length !== 2) {
-        return fail(503, 'Database tables are missing. Apply migrations/0001_omi_rooms.sql to ROOMS_DB.');
-      }
       return json({ success: true, service: 'shanex-omi-rooms', storage: 'D1' });
     }
 
@@ -228,7 +265,7 @@ export async function onRequest({ request, env }: PagesContext): Promise<Respons
 
     return fail(405, 'Unsupported method');
   } catch (err) {
-    console.error('[SHANEX OMI Pages API]', err);
-    return fail(503, 'Room service unavailable. Check ROOMS_DB migration/binding and Cloudflare Function logs.');
+    console.error('[SHANEX OMI Edge API]', err);
+    return fail(503, 'Room service unavailable. Check the ROOMS_DB binding and Cloudflare Worker/Function logs.');
   }
 }
