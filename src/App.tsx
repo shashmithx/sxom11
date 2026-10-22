@@ -50,8 +50,13 @@ import {
 const EMOJIS = ['❤️', '👏', '🔥', '😮', '😂', '🇱🇰', '🏆'];
 
 export default function App() {
-  const [lang, setLang] = useState<'en' | 'si'>('en');
+  const [lang, setLang] = useState<'en' | 'si'>('si');
   const t = translations[lang];
+
+  // Keep accessibility and browser text processing in sync with the UI language.
+  useEffect(() => {
+    document.documentElement.lang = lang;
+  }, [lang]);
 
   // Networking & Session State
   const webrtcRef = useRef<WebRTCManager | null>(null);
@@ -374,7 +379,7 @@ export default function App() {
     state.activePlayerIndex = state.trumpSelectorIndex;
     state.currentTrick = null;
     state.message = `Trump is ${suit.toUpperCase()}! ${state.players[state.activePlayerIndex].name} leads the first trick.`;
-    state.messageSi = `තුරුම්පු පාට ${suit.toUpperCase()}! ${state.players[state.activePlayerIndex].name} පළමු අත අදියි.`;
+    state.messageSi = `තුරුම්පු පාට ${translations.si[suit]}! ${state.players[state.activePlayerIndex].name} පළමු අත අදියි.`;
 
     broadcastState(state);
 
