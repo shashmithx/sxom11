@@ -702,6 +702,11 @@ export default function App() {
       }
       return;
     }
+    // Solo replay must not ask for an online peer connection.
+    if (hostStateRef.current?.roomCode === 'SOLO-PRACTICE') {
+      startSoloPractice();
+      return;
+    }
     handleStartGame();
   };
 
