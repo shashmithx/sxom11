@@ -205,6 +205,11 @@ export const OmiTable: React.FC<OmiTableProps> = ({
     if (!played) return null;
     const origin = CARD_ORIGINS[relativePosition];
     const target = CARD_TARGETS[relativePosition];
+    // A slow signaling poll can deliver several plays together. Stagger by
+    // actual trick order so all four plays remain visually distinguishable.
+    const playOrder = gameState.currentTrick?.cards.findIndex(
+      item => item.card.id === played.card.id
+    ) ?? 0;
     const collection = winnerRelativeSeat === null
       ? target
       : CARD_COLLECTIONS[winnerRelativeSeat];
@@ -218,7 +223,10 @@ export const OmiTable: React.FC<OmiTableProps> = ({
         exit={reducedMotion
           ? { opacity: 0, transition: { duration: 0.08 } }
           : { ...collection, opacity: 0, scale: 0.25, transition: { duration: 0.55, ease: 'easeInOut' } }}
-        transition={{ type: 'spring', stiffness: 350, damping: 28, mass: 0.7 }}
+        transition={{
+          type: 'spring', stiffness: 350, damping: 28, mass: 0.7,
+          delay: reducedMotion ? 0 : Math.max(0, playOrder) * 0.1,
+        }}
         title={`${seat.name}: ${played.card.rank} of ${played.card.suit}`}
       >
         <div className={collecting && trickWinnerId === seat.id
