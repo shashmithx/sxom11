@@ -167,19 +167,27 @@ export const OmiTable: React.FC<OmiTableProps> = ({
       <div className={`relative inline-flex items-center justify-center ${vertical ? 'h-14 w-[45px]' : 'h-12 w-[82px]'}`}
         aria-label={`${count} hidden cards`}>
         {Array.from({ length: Math.min(count, 3) }, (_, i) => (
-          <div
+          <motion.div
             key={i}
             className="absolute"
+            initial={reducedMotion ? false : { opacity: 0, y: -26, rotate: -12 }}
+            animate={{ opacity: 1, y: 0, rotate: 0 }}
+            transition={{ duration: reducedMotion ? 0 : 0.27, delay: reducedMotion ? 0 : i * 0.06 }}
             style={vertical
               ? { top: `${i * 5}px`, left: `${i * 3}px` }
               : { top: 0, left: `${i * 12}px` }}
           >
             <CardComponent isFaceDown size="sm" />
-          </div>
+          </motion.div>
         ))}
-        <span className="absolute -bottom-1 -right-1 z-10 rounded-full bg-amber-400 px-1.5 py-0.5 text-[10px] font-black text-zinc-950">
+        <motion.span
+          key={`hand-count-${count}`}
+          initial={reducedMotion ? false : { scale: 1.5 }}
+          animate={{ scale: 1 }}
+          transition={{ duration: reducedMotion ? 0 : 0.24 }}
+          className="absolute -bottom-1 -right-1 z-10 rounded-full bg-amber-400 px-1.5 py-0.5 text-[10px] font-black text-zinc-950">
           {count}
-        </span>
+        </motion.span>
       </div>
     );
   };
@@ -218,6 +226,12 @@ export const OmiTable: React.FC<OmiTableProps> = ({
           : 'rounded-xl ring-1 ring-white/30'}>
           <CardComponent card={played.card} size="md" />
         </div>
+        <span className={`absolute -bottom-5 left-1/2 -translate-x-1/2 max-w-[85px] truncate whitespace-nowrap rounded-full border px-1.5 py-0.5 text-[9px] font-bold shadow-md
+          ${seat.team === 1
+            ? 'border-blue-400/60 bg-blue-950 text-blue-100'
+            : 'border-rose-400/60 bg-rose-950 text-rose-100'}`}>
+          {seat.name}
+        </span>
       </motion.div>
     );
   };
