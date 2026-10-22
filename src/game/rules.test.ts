@@ -9,9 +9,11 @@ import {
   getNextPlayerIndex,
   getTeamForSeat,
   setupInitialPlayers,
+  setupSoloPlayers,
+  sanitizeStateForPlayer,
 } from './rules';
 import { botChooseTrumpSuit, botChooseCardToPlay } from './ai';
-import { Card, Trick, ScoreState } from './types';
+import { Card, Trick, ScoreState, GameState } from './types';
 
 test('createOmiDeck generates 32 authentic Sri Lankan OMI cards', () => {
   const deck = createOmiDeck();
@@ -198,4 +200,54 @@ test('setupInitialPlayers handles Mode A (Same Team) and Mode B (Opposite Teams)
   assert.notEqual(oppTeams[0].team, oppTeams[1].team); // Opponents!
   assert.equal(oppTeams[2].isHuman, false); // Kasun's partner is Bot Ravi
   assert.equal(oppTeams[0].team, oppTeams[2].team);
+});
+
+test('solo practice contains exactly one human in both team modes', () => {
+  for (const mode of ['same_team', 'opposite_teams'] as const) {
+    const players = setupSoloPlayers(mode, 'Kasun');
+    assert.equal(players.length, 4);
+    assert.deepEqual(players.filter(p => p.isHuman).map(p => p.id), [0]);
+    assert.equal(players[0].name, 'Kasun');
+    assert.equal(players[1].isHuman, false);
+    assert.equal(players[2].isHuman, false);
+    assert.equal(players[3].isHuman, false);
+  }
+});
+
+test('trump rotates from host at opening dealer seat 3 to later seats', () => {
+  let dealer = 3;
+  const selectors = [];
+  for (let round = 0; round < 4; round++) {
+    selectors.push(getNextPlayerIndex(dealer));
+    dealer = getNextPlayerIndex(dealer);
+  }
+  assert.deepEqual(selectors, [0, 1, 2, 3]);
+});
+
+test('sanitization hides opponent hands and never leaks undealt deck', () => {
+  const players = setupInitialPlayers('same_team', 'Host', 'Guest');
+  const deck = createOmiDeck();
+  for (let seat = 0; seat < 4; seat++) {
+    players[seat].hand = deck.slice(seat * 4, seat * 4 + 4);
+  }
+  const state: GameState = {
+    roomCode: 'OMI-TEST', teamMode: 'same_team', botDifficulty: 'normal',
+    phase: 'SELECTING_TRUMP', dealerIndex: 3, trumpSelectorIndex: 0,
+    trumpSuit: null, activePlayerIndex: 0, currentTrick: null, lastCompletedTrick: null,
+    tricksHistory: [], players, roundNumber: 1, roundSummaries: [],
+    winningTeam: null, message: '', messageSi: '',
+    score: {
+      team1Tokens: 0, team2Tokens: 0, carriedTokens: 0,
+      team1RoundTricks: 0, team2RoundTricks: 0, targetTokens: 10,
+    },
+  };
+  (state as GameState & { remainingDeck?: Card[] }).remainingDeck = deck.slice(16);
+  const host = sanitizeStateForPlayer(state, 0);
+  const guest = sanitizeStateForPlayer(state, 2);
+  assert.equal(host.players[0].hand.length, 4);
+  assert.equal(host.players[2].hand.length, 0);
+  assert.equal(guest.players[2].hand.length, 4);
+  assert.equal(guest.players[0].hand.length, 0);
+  assert.equal('remainingDeck' in host, false);
+  assert.equal('remainingDeck' in guest, false);
 });
