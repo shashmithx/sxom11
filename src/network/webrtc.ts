@@ -52,6 +52,8 @@ export class WebRTCManager {
   private onMessageCallback: MessageHandler | null = null;
   private onStatusCallback: StatusHandler | null = null;
   private lastSignalTimestamp: number = 0;
+  private lastSignalSeq: number = 0;
+  private processedSignals = new Set<string>();
   private pendingCandidates: RTCIceCandidateInit[] = [];
 
   constructor() {}
@@ -88,10 +90,8 @@ export class WebRTCManager {
       body: JSON.stringify({ hostName, teamMode, botDifficulty }),
     });
 
-    const data = await res.json();
-    if (!data.success) {
-      throw new Error(data.error || 'Failed to create room');
-    }
+    const data = await this.readRoomApiResponse(res);
+
 
     this.roomCode = data.roomCode;
     this.myPeerId = data.hostId;
@@ -118,15 +118,12 @@ export class WebRTCManager {
       body: JSON.stringify({ roomCode, guestName }),
     });
 
-    const data = await res.json();
-    if (!data.success) {
-      this.updateStatus('error', data.error || 'Could not join room');
-      throw new Error(data.error || 'Could not join room');
-    }
+    const data = await this.readRoomApiResponse(res);
+
 
     this.roomCode = data.roomCode;
     this.myPeerId = data.guestId;
-    this.remotePeerId = 'host'; // or host's ID once received
+    this.remotePeerId = data.hostId; // Signal must target the actual host ID, not a placeholder
 
     // Connect SSE listener
     this.startSignalListener();
@@ -306,12 +303,7 @@ export class WebRTCManager {
     this.eventSource.onmessage = (event) => {
       try {
         const item = JSON.parse(event.data);
-        if (item.type === 'RELAY_PACKET') {
-          this.stats.packetsReceived++;
-          this.handleIncomingMessage(item.payload);
-        } else if (item.data) {
-          this.handleRemoteSignal(item.from, item.data);
-        }
+        this.processIncomingSignal(item);
       } catch (e) {
         console.error('[WebRTC] SSE error:', e);
       }
@@ -334,17 +326,61 @@ export class WebRTCManager {
       if (!this.roomCode || !this.myPeerId) return;
       try {
         const res = await fetch(
-          `/api/rooms/${this.roomCode}/signals?peerId=${this.myPeerId}&since=${this.lastSignalTimestamp}`
+          `/api/rooms/${encodeURIComponent(this.roomCode)}/signals?peerId=${encodeURIComponent(this.myPeerId)}&since=${this.lastSignalTimestamp}&sinceSeq=${this.lastSignalSeq}`
         );
+        if (!res.ok) return;
         const data = await res.json();
-        if (data.success && data.signals && data.signals.length > 0) {
-          for (const s of data.signals) {
-            this.lastSignalTimestamp = Math.max(this.lastSignalTimestamp, s.timestamp);
-            this.handleRemoteSignal(s.from, s.data);
-          }
+        if (data.success && Array.isArray(data.signals)) {
+          for (const s of data.signals) this.processIncomingSignal(s);
         }
       } catch (e) {}
     }, 1200);
+  }
+
+  /** Give a useful error when static Pages HTML is returned instead of an API. */
+  private async readRoomApiResponse(response: Response): Promise<any> {
+    const contentType = response.headers.get('Content-Type') || '';
+    if (!contentType.includes('application/json')) {
+      throw new Error(
+        'Room API is unavailable (HTTP ' + response.status +
+        '). Cloudflare Pages Functions must be deployed and bound to D1.'
+      );
+    }
+    const result = await response.json();
+    if (!response.ok || !result.success) {
+      throw new Error(result.error || 'Room service returned HTTP ' + response.status);
+    }
+    return result;
+  }
+
+  /** Deduplicate SSE + polling and use Cloudflare D1's ordered message IDs. */
+  private processIncomingSignal(item: any) {
+    if (!item) return;
+    if (typeof item.seq === 'number') {
+      this.lastSignalSeq = Math.max(this.lastSignalSeq, item.seq);
+    }
+    if (typeof item.timestamp === 'number') {
+      this.lastSignalTimestamp = Math.max(this.lastSignalTimestamp, item.timestamp);
+    }
+    const key = item.id == null ? '' : String(item.id);
+    if (key) {
+      if (this.processedSignals.has(key)) return;
+      this.processedSignals.add(key);
+      if (this.processedSignals.size > 300) {
+        this.processedSignals.delete(this.processedSignals.values().next().value as string);
+      }
+    }
+    if (item.type === 'RELAY_PACKET' || item.data?.type === 'RELAY_PACKET') {
+      const packet = item.type === 'RELAY_PACKET' ? item : item.data;
+      if (packet.payload) {
+        this.stats.packetsReceived++;
+        this.handleIncomingMessage(packet.payload);
+      }
+    } else if (item.data) {
+      void this.handleRemoteSignal(item.from, item.data).catch(error =>
+        console.error('[WebRTC] Signal processing error:', error)
+      );
+    }
   }
 
   /**
