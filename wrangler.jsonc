@@ -2,7 +2,7 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "sxom11",
   "main": "./worker/index.ts",
-  "compatibility_date": "2026-10-23",
+  "compatibility_date": "2026-10-22",
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
